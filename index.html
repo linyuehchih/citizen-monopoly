@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="description" content="市民大富翁：花蓮市的合作式公民教育遊戲，和大家一起面對市政問題。">
+<title>市民大富翁</title>
+<style>
+:root{
+  --bg:#f6f4ee; --panel:#ffffff; --text:#1f2933; --muted:#6b7280; --line:#e3dfd3;
+  --accent:#c2410c; --good:#15803d; --bad:#b91c1c;
+  --s:#d98e04; --t:#2b7de9; --e:#2e9e5b; --c:#b45cc9;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#16181d; --panel:#1f232b; --text:#e8e6df; --muted:#9aa3af; --line:#343a46;
+         --accent:#f59e63; --good:#4ade80; --bad:#f87171; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;line-height:1.5}
+button{font:inherit;color:inherit;cursor:pointer}
+.wrap{max-width:560px;margin:0 auto;padding:12px 16px 40px}
+h1{font-size:26px;margin:18px 0 4px}
+h2{font-size:18px;margin:0 0 8px}
+.sub{color:var(--muted);margin:0 0 16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.panel.hl{border-left:4px solid var(--accent)}
+.btn{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:11px 18px;font-weight:700;font-size:16px}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.seg button{border:1px solid var(--line);background:var(--panel);padding:8px 14px;border-radius:8px}
+.seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.rules{margin:0;padding-left:20px;color:var(--text)}
+.rules li{margin:4px 0}
+.foot{color:var(--muted);font-size:12px;margin-top:14px}
+
+/* 頂部資訊 */
+.hud{display:flex;justify-content:space-between;align-items:center;margin:4px 0 8px;font-weight:700}
+.budget{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 12px}
+.players{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;font-size:13px}
+.pl{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:2px 10px 2px 4px;background:var(--panel)}
+.pl.now{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
+.token{width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);
+  font-size:9px;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.inds{display:grid;gap:5px;margin-bottom:10px}
+.ind{display:grid;grid-template-columns:104px 1fr 62px;gap:8px;align-items:center;font-size:13px}
+.bar{position:relative;height:12px;border-radius:6px;background:var(--line)}
+.bar i{display:block;height:100%;border-radius:6px;transition:width .4s}
+.bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text);opacity:.55}
+.ind b{text-align:right;font-variant-numeric:tabular-nums}
+.delta{font-size:11px;margin-left:3px}
+.delta.pos{color:var(--good)} .delta.neg{color:var(--bad)}
+
+/* 棋盤 */
+.board{display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(6,1fr);gap:4px;aspect-ratio:1/1}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px 4px;
+  font-size:10.5px;line-height:1.2;display:flex;flex-direction:column;justify-content:space-between;min-width:0;overflow:hidden}
+.tile .top{display:flex;justify-content:space-between;color:var(--muted);font-size:9px}
+.tile .nm{word-break:break-all}
+.tile.event{border-top:3px solid var(--accent)}
+.tile.chance{border-top:3px solid #8b5cf6}
+.tile.landmark{border-top:3px solid var(--good)}
+.tile.rest{border-top:3px solid #94a3b8}
+.tile.here{outline:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+.tokens{display:flex;gap:2px;flex-wrap:wrap;min-height:16px}
+.center{grid-row:2/span 4;grid-column:2/span 4;background:var(--panel);border:1px dashed var(--line);border-radius:12px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px;text-align:center}
+.who{display:flex;align-items:center;gap:6px;font-weight:700}
+.dice{font-size:56px;line-height:1}
+.hint{color:var(--muted);font-size:13px;min-height:20px}
+
+/* 彈出視窗 */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:12px;z-index:10}
+.sheet{background:var(--panel);color:var(--text);border-radius:16px;max-width:520px;width:100%;max-height:92vh;overflow:auto;padding:18px}
+.tag{display:inline-block;font-size:12px;border-radius:999px;padding:1px 10px;background:var(--line);color:var(--muted);margin-right:6px}
+.tag.hl{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--accent)}
+.src{font-size:12px;color:var(--muted);margin:2px 0 8px}
+.scene{margin:8px 0 12px}
+.opt{display:block;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:8px}
+.opt:hover:not(:disabled){border-color:var(--accent)}
+.opt:disabled{opacity:.45;cursor:not-allowed}
+.opt.pick{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
+.opt .lb{font-weight:700;margin-bottom:4px}
+.chips{display:flex;gap:5px;flex-wrap:wrap}
+.chip{font-size:12px;border:1px solid var(--line);border-radius:6px;padding:0 6px;font-variant-numeric:tabular-nums}
+.chip.pos{color:var(--good);border-color:currentColor}
+.chip.neg{color:var(--bad);border-color:currentColor}
+.res{margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--bg)}
+.log{font-size:13px;color:var(--muted);padding-left:18px;margin:6px 0}
+.big{font-size:32px;margin:0}
+.win{color:var(--good)} .lose{color:var(--bad)}
+</style>
+</head>
+<body>
+<div id="app" class="wrap"></div>
+<script src="data/game-data.js?v=0d99b3bb"></script>
+<script src="bot.js?v=5dcdcd2e"></script>
+<script src="stats-config.js?v=359a6d75"></script>
+<script src="stats.js?v=f78d2499"></script>
+<script>
+(function(){
+  var app = document.getElementById('app');
+  var D = window.GAME_DATA;
+  if(!D){
+    app.innerHTML = '<div class="panel"><h2>找不到遊戲資料</h2><p>請先執行 tools/render_cards.py，產生 data/game-data.js 後再重新開啟這個網頁。</p></div>';
+    return;
+  }
+  var C = D.config;
+  var IND = [
+    {k:'s', icon:'🙂', name:'市民滿意度'},
+    {k:'t', icon:'🚗', name:'交通順暢'},
+    {k:'e', icon:'🌿', name:'環境整潔'},
+    {k:'c', icon:'🤝', name:'照顧與安全'}
+  ];
+  var TOKEN_COLORS = ['#dc2626','#2563eb','#16a34a','#ca8a04'];
+  var TYPE_ICON = {event:'📋', chance:'🎁', landmark:'📍', rest:'☕'};
+  var DICE = ['🎲','⚀','⚁','⚂','⚃','⚄','⚅'];
+  var FALLBACK = {label:'先擱置，這次沒預算處理', cost:0, fx:{s:-3}, result:'預算不夠，問題只能先放著，市民有點失望。'};
+  var REFLECT = {
+    s:'市民滿意度是大家最在意的。如果只能選一件事讓市民更有感，你會選什麼？為什麼？',
+    t:'交通影響每個人的日常。你覺得該先處理塞車、停車，還是公共運輸？誰的需要應該排前面？',
+    e:'環境整潔常常是「大家都想要，但沒人想出錢出力」。你覺得誰應該負責，市民可以做什麼？',
+    c:'照顧與安全看不見，卻最重要。預算有限時，你會優先照顧哪一群人？'
+  };
+
+  // 真人玩家每做一次選擇，就匿名記一筆（網址沒設定時 CityStats 什麼都不做）
+  window.CityGame = window.CityGame || {};
+  window.CityGame.onChoice = function(info){
+    if(window.CityStats) window.CityStats.record(info.cardId, info.optionIndex);
+  };
+
+  var G = null;               // 一局遊戲的狀態
+  var SETUP = {n:2, seats:['human','bot','bot','bot'], level:'normal'};
+
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  function rnd(n){ return Math.floor(Math.random()*n); }
+  function pick(a){ return a[rnd(a.length)]; }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function fxChips(fx){
+    return IND.filter(function(i){ return fx[i.k]; }).map(function(i){
+      var v = fx[i.k];
+      return '<span class="chip '+(v>0?'pos':'neg')+'">'+i.icon+(v>0?'+':'')+v+'</span>';
+    }).join('');
+  }
+  function costChip(c){
+    if(c===0) return '<span class="chip">💰0</span>';
+    return c<0 ? '<span class="chip pos">💰+'+(-c)+'</span>' : '<span class="chip neg">💰-'+c+'</span>';
+  }
+  function tokenHtml(i){
+    return '<span class="token" style="background:'+TOKEN_COLORS[i]+'">'+(i+1)+'</span>';
+  }
+
+  /* ---------- 畫面：開始設定 ---------- */
+  function renderSetup(){
+    var seatsHtml = '';
+    for(var i=0;i<SETUP.n;i++){
+      var isHuman = SETUP.seats[i]==='human';
+      seatsHtml += '<div class="row" style="margin:6px 0">'+tokenHtml(i)+'<b>玩家 '+(i+1)+'</b>'+
+        '<span class="seg"><button data-seat="'+i+'" data-v="human" class="'+(isHuman?'on':'')+'">真人</button>'+
+        '<button data-seat="'+i+'" data-v="bot" class="'+(!isHuman?'on':'')+'">電腦</button></span></div>';
+    }
+    var hasHuman = SETUP.seats.slice(0,SETUP.n).indexOf('human')>=0;
+    var hasBot = SETUP.seats.slice(0,SETUP.n).indexOf('bot')>=0;
+    // 統計功能有開啟時，首頁說明「你的選擇會讓大家看見多數人的想法」
+    var introHtml = (window.CityStats && window.CityStats.enabled()) ?
+      '<div class="panel hl"><h2>🗳️ 你的選擇，會讓大家看見</h2>'+
+      '<p style="margin:0 0 6px">每次處理市政問題，你選的解決方式都會被匿名記下來。玩的人越多，我們就越能看出：面對同一個問題，大家比較傾向用什麼方式解決。</p>'+
+      '<p class="hint" style="margin:0">這是玩家選擇統計，不是民意調查。</p></div>' : '';
+    var levelHtml = hasBot ?
+      '<div class="panel"><h2>電腦玩家風格</h2><div class="seg row" id="lvSeg">'+
+        '<button data-lv="easy" class="'+(SETUP.level==='easy'?'on':'')+'">🟢 輕鬆</button>'+
+        '<button data-lv="normal" class="'+(SETUP.level==='normal'?'on':'')+'">🟡 普通</button></div>'+
+      '<p class="hint" style="margin:8px 0 0">'+(SETUP.level==='easy' ?
+        '輕鬆：電腦會去救最弱的指標，但不太會算預算，偶爾也會失誤。' :
+        '普通：電腦會算預算，優先救最弱的指標，但不一定每次都選最好的。')+'</p></div>' : '';
+    app.innerHTML =
+      '<h1>🏙️ 市民大富翁</h1>'+
+      '<p class="sub">花蓮市的合作式公民教育遊戲：大家同一隊，一起把城市經營好。</p>'+
+      introHtml+
+      '<div class="panel"><h2>怎麼玩</h2><ol class="rules">'+
+        '<li>輪流擲骰子，走到花蓮市的各個地點。</li>'+
+        '<li>遇到市政事件，從 2～3 個處理方式中選一個。每個選擇都要花預算，也都有好處與代價。</li>'+
+        '<li>'+C.rounds+' 回合後，🙂市民滿意度要達 '+C.winSatisfaction+'，其他三項指標都要超過 '+C.minOtherIndicator+'，全隊才算獲勝。</li>'+
+        '<li>任何一項指標降到 0，城市就撐不住了。</li>'+
+      '</ol></div>'+
+      '<div class="panel"><h2>幾位玩家？</h2><div class="seg row" id="nSeg">'+
+        [2,3,4].map(function(n){ return '<button data-n="'+n+'" class="'+(SETUP.n===n?'on':'')+'">'+n+' 位</button>'; }).join('')+
+      '</div><div style="margin-top:10px">'+seatsHtml+'</div>'+
+      (hasHuman ? '' : '<p class="lose">至少要有 1 位真人玩家。</p>')+
+      '</div>'+
+      levelHtml+
+      (window.CityStats && window.CityStats.enabled() && hasHuman ?
+        '<p class="hint">📊 為了讓大家看到彼此的想法，遊戲會匿名記錄真人玩家的選擇：只記「哪張卡、選了哪個」，不記姓名、帳號或手機。這是玩家選擇統計，不是民意調查。</p>' : '')+
+      '<button class="btn" id="startBtn"'+(hasHuman?'':' disabled')+'>開始遊戲</button>'+
+      '<p class="foot">這是公民教育遊戲，事件內容為情境模擬，不代表任何政黨或個人的立場。</p>';
+
+    app.querySelectorAll('#nSeg button').forEach(function(b){
+      b.onclick = function(){ SETUP.n = +b.dataset.n; renderSetup(); };
+    });
+    app.querySelectorAll('[data-seat]').forEach(function(b){
+      b.onclick = function(){ SETUP.seats[+b.dataset.seat] = b.dataset.v; renderSetup(); };
+    });
+    app.querySelectorAll('#lvSeg button').forEach(function(b){
+      b.onclick = function(){ SETUP.level = b.dataset.lv; renderSetup(); };
+    });
+    document.getElementById('startBtn').onclick = startGame;
+  }
+
+  /* ---------- 開局 ---------- */
+  function startGame(){
+    var botNo = 0;
+    var players = [];
+    for(var i=0;i<SETUP.n;i++){
+      var bot = SETUP.seats[i]==='bot';
+      players.push({name: bot ? '電腦'+String.fromCharCode(65+botNo++) : '玩家'+(i+1), bot:bot, pos:0});
+    }
+    G = {
+      players: players, turn:0, round:1, budget:C.startBudget,
+      ind:{s:C.startIndicator, t:C.startIndicator, e:C.startIndicator, c:C.startIndicator},
+      usedEvents:{}, usedChances:{}, log:[], dice:0, phase:'idle', msg:'',
+      delta:{}, deltaBudget:0, over:false, result:null, rollResolve:null, level:SETUP.level
+    };
+    if(window.CityStats) window.CityStats.load();   // 先把大家的選擇比例抓回來
+    gameLoop();
+  }
+
+  /* ---------- 主迴圈 ---------- */
+  async function gameLoop(){
+    render();
+    while(!G.over){
+      for(G.turn=0; G.turn<G.players.length && !G.over; G.turn++){
+        await playTurn();
+      }
+      if(G.over) break;
+      G.turn = 0;
+      await endRound();
+    }
+  }
+
+  function cur(){ return G.players[G.turn]; }
+
+  async function playTurn(){
+    var p = cur();
+    G.phase = 'roll'; G.dice = 0;
+    G.msg = p.bot ? p.name+' 準備擲骰子…' : '輪到你了，擲骰子吧！';
+    render();
+    if(p.bot){ await sleep(900); }
+    else { await new Promise(function(r){ G.rollResolve = r; }); }
+    G.phase = 'moving';
+    for(var k=0;k<8;k++){ G.dice = 1+rnd(6); render(); await sleep(70); }
+    var steps = 1+rnd(6);
+    G.dice = steps; render(); await sleep(350);
+    for(var s=0;s<steps;s++){
+      p.pos = (p.pos+1) % D.tiles.length;
+      render(); await sleep(170);
+    }
+    var tile = D.tiles[p.pos];
+    G.msg = p.name+' 走到了「'+tile.name+'」';
+    G.phase = 'resolve'; render();
+    await sleep(250);
+    await resolveTile(p, tile);
+    G.phase = 'idle'; render();
+  }
+
+  async function resolveTile(p, tile){
+    if(tile.type==='event') return playEvent(p, tile);
+    if(tile.type==='chance') return playChance(p, tile);
+    if(tile.type==='landmark'){
+      var ic = IND.filter(function(i){ return i.k===tile.bonus; })[0];
+      var fx = {}; fx[tile.bonus] = C.tileBonus;
+      applyEffects(fx, 0);
+      render();
+      if(checkLose()) return;
+      return info(p, '📍 '+tile.name, tile.name+'運作順利，'+ic.name+'提升了。', fxChips(fx));
+    }
+    if(tile.type==='rest'){
+      applyEffects({}, C.restBudget);
+      render();
+      return info(p, '☕ '+tile.name, '稍微休息一下，整理好預算。', costChip(-C.restBudget));
+    }
+  }
+
+  /* ---------- 事件卡 ---------- */
+  function draw(pool, used, tileId){
+    var cands = pool.filter(function(e){ return !used[e.id] && (!e.tiles || e.tiles.indexOf(tileId)>=0); });
+    if(!cands.length) cands = pool.filter(function(e){ return !used[e.id]; });
+    if(!cands.length){
+      Object.keys(used).forEach(function(k){ delete used[k]; });
+      cands = pool.filter(function(e){ return !e.tiles || e.tiles.indexOf(tileId)>=0; });
+      if(!cands.length) cands = pool;
+    }
+    var c = pick(cands);
+    used[c.id] = true;
+    return c;
+  }
+
+  // 電腦玩家的選擇邏輯在 bot.js，這裡只負責把目前的城市狀態交給它
+  function incomeNow(){ return C.incomePerPlayerPerRound * G.players.length; }
+  function decayNow(){
+    var n = G.players.length;
+    return C.decayByPlayers && C.decayByPlayers[n] != null ? C.decayByPlayers[n] : Math.round(C.decayPerPlayerPerRound * n);
+  }
+  function botChoose(opts){
+    return window.CityBot.choose(opts, {
+      ind: G.ind, budget: G.budget, round: G.round, rounds: C.rounds,
+      n: G.players.length, dec: decayNow(), income: incomeNow(), cfg: C
+    }, G.level);
+  }
+
+  async function playEvent(p, tile){
+    var card = draw(D.events, G.usedEvents, tile.id);
+    var opts = card.options.slice();
+    if(!opts.some(function(o){ return o.cost <= G.budget; })) opts.push(FALLBACK);
+    var idx = await chooseOption(card, opts, p, tile);
+    var o = opts[idx];
+    applyEffects(o.fx, -o.cost);
+    G.log.push({round:G.round, who:p.name, bot:p.bot, tile:tile.name, title:card.title, choice:o.label, cost:o.cost,
+                cardId:card.id, idx:idx, real: idx < card.options.length});
+    if(!p.bot && idx < card.options.length && window.CityGame && typeof window.CityGame.onChoice==='function'){
+      try{ window.CityGame.onChoice({cardId:card.id, optionIndex: idx, round:G.round}); }catch(e){}
+    }
+    render();
+    await showResult(card, o, p, idx);
+    checkLose();
+  }
+
+  // 「X% 的玩家和你選一樣」。紀錄不夠、沒設定網址、或是電腦玩家，就什麼都不顯示
+  function shareLine(card, idx, p){
+    if(p.bot || !window.CityStats || idx >= card.options.length) return '';
+    var s = window.CityStats.share(card.id, idx);
+    if(!s) return '';
+    return '<div class="res" style="margin-top:8px">📊 在所有玩家裡，<b>'+s.pct+'%</b> 的人跟你選一樣（共 '+s.total+' 人選過這張卡）'+
+      '<div class="hint">這是玩家選擇統計，不是民意調查。</div></div>';
+  }
+
+  function cardHead(card, tile){
+    return '<div><span class="tag '+(card.kind==='hualien'?'hl':'')+'">'+(card.kind==='hualien'?'花蓮在地':'市政情境')+'</span>'+
+      '<span class="tag">📍 '+esc(tile.name)+'</span></div>'+
+      '<h2 style="margin-top:8px">'+esc(card.title)+'</h2>';
+  }
+
+  function chooseOption(card, opts, p, tile){
+    return new Promise(function(resolve){
+      var html = cardHead(card, tile)+'<p class="scene">'+esc(card.scene)+'</p>'+
+        '<div class="hint" style="margin-bottom:8px">💰 目前預算 '+G.budget+'　'+(p.bot ? p.name+' 正在選擇…' : '請 '+p.name+' 選一個處理方式')+'</div>'+
+        (p.bot ? '<div class="hint" id="botNote" style="margin-bottom:8px;color:var(--accent)">&nbsp;</div>' : '')+
+        opts.map(function(o,i){
+          var dis = o.cost > G.budget || p.bot;
+          return '<button class="opt" data-i="'+i+'"'+(dis?' disabled':'')+'><div class="lb">'+String.fromCharCode(65+i)+'. '+esc(o.label)+'</div>'+
+            '<div class="chips">'+costChip(o.cost)+fxChips(o.fx)+'</div>'+
+            (o.cost > G.budget ? '<div class="hint">預算不夠</div>' : '')+'</button>';
+        }).join('');
+      var ov = modal(html);
+      if(p.bot){
+        var choice = botChoose(opts), i = choice.index;
+        // 讓真人看得懂電腦做了什麼：停一下，標出電腦的選擇和理由
+        sleep(1200).then(function(){
+          var b = ov.querySelector('[data-i="'+i+'"]');
+          if(b){ b.classList.add('pick'); }
+          var note = ov.querySelector('#botNote');
+          if(note && choice.reason){ note.textContent = '💭 '+p.name+'：'+choice.reason; }
+          sleep(1600).then(function(){ resolve(i); });
+        });
+      } else {
+        ov.querySelectorAll('.opt').forEach(function(b){
+          b.onclick = function(){ if(!b.disabled) resolve(+b.dataset.i); };
+        });
+      }
+    });
+  }
+
+  async function showResult(card, o, p, idx){
+    var html = '<h2>'+esc(card.title)+'</h2>'+
+      '<div class="res"><b>'+esc(p.name)+'選了：'+esc(o.label)+'</b><div style="margin-top:6px">'+esc(o.result)+'</div>'+
+      '<div class="chips" style="margin-top:8px">'+costChip(o.cost)+fxChips(o.fx)+'</div></div>'+
+      shareLine(card, idx, p)+
+      '<button class="btn" id="goOn">繼續</button>';
+    var ov = modal(html);
+    await waitClick(ov, '#goOn', p.bot ? 2200 : 0);
+    closeModal();
+  }
+
+  /* ---------- 機會卡／一般提示 ---------- */
+  async function playChance(p, tile){
+    var card = draw(D.chances, G.usedChances, tile.id);
+    var g = card.gain, budget = g.budget || 0, fx = {};
+    IND.forEach(function(i){ if(g[i.k]) fx[i.k] = g[i.k]; });
+    applyEffects(fx, budget);
+    render();
+    var chips = (budget ? costChip(-budget) : '') + fxChips(fx);
+    await info(p, '🎁 '+card.title, card.text, chips);
+  }
+
+  async function info(p, title, text, chips){
+    var html = '<h2>'+title+'</h2><p class="scene">'+esc(text)+'</p>'+
+      '<div class="chips" style="margin-bottom:12px">'+chips+'</div><button class="btn" id="goOn">繼續</button>';
+    var ov = modal(html);
+    await waitClick(ov, '#goOn', p.bot ? 1800 : 0);
+    closeModal();
+    checkLose();
+  }
+
+  /* ---------- 數值變動與勝負 ---------- */
+  var clearTimer = null;
+  function applyEffects(fx, budgetDelta){
+    G.budget = Math.max(0, G.budget + budgetDelta);
+    var d = {};
+    IND.forEach(function(i){
+      if(fx[i.k]){
+        var before = G.ind[i.k];
+        G.ind[i.k] = clamp(before + fx[i.k], 0, 100);
+        d[i.k] = G.ind[i.k] - before;
+      }
+    });
+    G.delta = d; G.deltaBudget = budgetDelta;
+    clearTimeout(clearTimer);
+    clearTimer = setTimeout(function(){ if(G){ G.delta = {}; G.deltaBudget = 0; render(); } }, 3000);
+  }
+
+  function checkLose(){
+    if(G.over) return true;
+    var z = IND.filter(function(i){ return G.ind[i.k] <= 0; })[0];
+    if(z){ finish(false, z.icon+z.name+'降到 0，城市撐不住了。', z.k); return true; }
+    return false;
+  }
+
+  async function endRound(){
+    var inc = incomeNow(), dec = decayNow();
+    applyEffects({s:-dec, t:-dec, e:-dec, c:-dec}, inc);
+    G.phase = 'idle'; G.msg = '第 '+G.round+' 回合結束'; render();
+    if(checkLose()) return;
+    var last = G.round >= C.rounds;
+    var html = '<h2>第 '+G.round+' 回合結束</h2>'+
+      '<div class="res">稅收進帳 💰+'+inc+'。城市會老化，人也會抱怨，每項指標 −'+dec+'。</div>'+
+      '<div class="chips" style="margin-bottom:12px">'+costChip(-inc)+fxChips({s:-dec,t:-dec,e:-dec,c:-dec})+'</div>'+
+      '<button class="btn" id="goOn">'+(last ? '看結果' : '下一回合')+'</button>';
+    var ov = modal(html);
+    await waitClick(ov, '#goOn', 0);
+    closeModal();
+    if(last){ evaluate(); return; }
+    G.round++;
+  }
+
+  function evaluate(){
+    var low = IND.filter(function(i){ return i.k!=='s' && G.ind[i.k] <= C.minOtherIndicator; })[0];
+    if(G.ind.s < C.winSatisfaction){
+      finish(false, '🙂市民滿意度只有 '+G.ind.s+'，沒有達到 '+C.winSatisfaction+'。', 's');
+    } else if(low){
+      finish(false, low.icon+low.name+'只剩 '+G.ind[low.k]+'，需要超過 '+C.minOtherIndicator+'。', low.k);
+    } else {
+      finish(true, '城市撐過了 '+C.rounds+' 回合，大家做得很好！', null);
+    }
+  }
+
+  function weakest(){
+    var w = IND[0];
+    IND.forEach(function(i){ if(G.ind[i.k] < G.ind[w.k]) w = i; });
+    return w;
+  }
+
+  function finish(win, reason, failKey){
+    G.over = true;
+    var w = failKey ? IND.filter(function(i){ return i.k===failKey; })[0] : weakest();
+    G.result = {win:win, reason:reason, weak:w};
+    closeModal();
+    render();
+    // 結算時再抓一次最新的比例，抓到了就重畫結算畫面
+    if(window.CityStats && window.CityStats.enabled()){
+      window.CityStats.load().then(function(){ if(G && G.over) render(); });
+    }
+  }
+
+  /* ---------- 彈出視窗工具 ---------- */
+  function modal(html){
+    closeModal();
+    var ov = document.createElement('div');
+    ov.className = 'overlay';
+    ov.innerHTML = '<div class="sheet">'+html+'</div>';
+    document.body.appendChild(ov);
+    return ov;
+  }
+  function closeModal(){
+    document.querySelectorAll('.overlay').forEach(function(e){ e.remove(); });
+  }
+  function waitClick(ov, sel, autoMs){
+    return new Promise(function(resolve){
+      var done = false;
+      function fin(){ if(done) return; done = true; resolve(); }
+      var btn = ov.querySelector(sel);
+      if(btn) btn.addEventListener('click', fin);
+      if(autoMs) setTimeout(fin, autoMs);
+    });
+  }
+
+  /* ---------- 畫面：遊戲中 ---------- */
+  function tilePos(id){
+    if(id<=6) return {r:1, c:id};
+    if(id<=10) return {r:id-5, c:6};
+    if(id<=16) return {r:6, c:6-(id-11)};
+    return {r:6-(id-16), c:1};
+  }
+
+  function renderGame(){
+    var p = cur();
+    var playersHtml = G.players.map(function(pl,i){
+      return '<span class="pl'+(i===G.turn && !G.over ? ' now':'')+'">'+tokenHtml(i)+esc(pl.name)+'</span>';
+    }).join('');
+
+    var indHtml = IND.map(function(i){
+      var v = G.ind[i.k], thr = i.k==='s' ? C.winSatisfaction : C.minOtherIndicator;
+      var d = G.delta[i.k];
+      return '<div class="ind"><span>'+i.icon+' '+i.name+'</span>'+
+        '<div class="bar"><i style="width:'+v+'%;background:var(--'+i.k+')"></i><u style="left:'+thr+'%"></u></div>'+
+        '<b>'+v+(d ? '<span class="delta '+(d>0?'pos':'neg')+'">'+(d>0?'+':'')+d+'</span>' : '')+'</b></div>';
+    }).join('');
+
+    var tilesHtml = D.tiles.map(function(t){
+      var pos = tilePos(t.id);
+      var here = G.players.map(function(pl,i){ return pl.pos===t.id-1 ? tokenHtml(i) : ''; }).join('');
+      var isHere = G.players.some(function(pl){ return pl.pos===t.id-1; }) && G.players[G.turn].pos===t.id-1;
+      var bonus = t.bonus ? IND.filter(function(i){ return i.k===t.bonus; })[0].icon : '';
+      return '<div class="tile '+t.type+(isHere?' here':'')+'" style="grid-row:'+pos.r+';grid-column:'+pos.c+'">'+
+        '<div class="top"><span>'+t.id+'</span><span>'+TYPE_ICON[t.type]+bonus+'</span></div>'+
+        '<div class="nm">'+esc(t.name)+'</div><div class="tokens">'+here+'</div></div>';
+    }).join('');
+
+    var action;
+    if(G.phase==='roll' && !p.bot){
+      action = '<button class="btn" id="rollBtn">🎲 擲骰子</button>';
+    } else {
+      action = '<div class="hint">'+esc(G.msg)+'</div>';
+    }
+
+    app.innerHTML =
+      '<div class="hud"><span>第 '+G.round+' / '+C.rounds+' 回合</span>'+
+      '<span class="budget">💰 預算 '+G.budget+(G.deltaBudget ? '<span class="delta '+(G.deltaBudget>0?'pos':'neg')+'">'+(G.deltaBudget>0?'+':'')+G.deltaBudget+'</span>' : '')+'</span></div>'+
+      '<div class="players">'+playersHtml+'</div>'+
+      '<div class="inds">'+indHtml+'</div>'+
+      '<div class="board">'+tilesHtml+
+        '<div class="center"><div class="who">'+tokenHtml(G.turn)+esc(p.name)+'</div>'+
+        '<div class="dice">'+DICE[G.dice||0]+'</div>'+action+'</div></div>'+
+      '<p class="foot">棋盤上的黑色小線是過關門檻：🙂要在 '+C.winSatisfaction+' 以上，其他三項要超過 '+C.minOtherIndicator+'。</p>';
+
+    var rb = document.getElementById('rollBtn');
+    if(rb) rb.onclick = function(){ if(G.rollResolve){ var r = G.rollResolve; G.rollResolve = null; r(); } };
+  }
+
+  /* ---------- 畫面：結算 ---------- */
+  function renderResult(){
+    var R = G.result;
+    var indHtml = IND.map(function(i){
+      return '<div class="ind"><span>'+i.icon+' '+i.name+'</span>'+
+        '<div class="bar"><i style="width:'+G.ind[i.k]+'%;background:var(--'+i.k+')"></i></div><b>'+G.ind[i.k]+'</b></div>';
+    }).join('');
+    var statsHtml = '';
+    if(window.CityStats){
+      var mine = G.log.filter(function(l){ return !l.bot && l.real && window.CityStats.share(l.cardId, l.idx); });
+      if(mine.length){
+        statsHtml = '<div class="panel"><h2>你和大家的想法</h2><ul class="log">'+mine.map(function(l){
+          var s = window.CityStats.share(l.cardId, l.idx);
+          return '<li>'+esc(l.title)+'：你選「'+esc(l.choice)+'」，'+s.pct+'% 的玩家跟你一樣</li>';
+        }).join('')+'</ul><div class="hint">這是玩家選擇統計，不是民意調查。</div></div>';
+      }
+    }
+    var logHtml = G.log.length ? '<ol class="log">'+G.log.map(function(l){
+      return '<li>第 '+l.round+' 回合・'+esc(l.tile)+'：'+esc(l.title)+' → '+esc(l.choice)+'（'+esc(l.who)+'）</li>';
+    }).join('')+'</ol>' : '<p class="hint">這局沒有處理任何事件。</p>';
+
+    app.innerHTML =
+      '<p class="big '+(R.win?'win':'lose')+'">'+(R.win ? '🎉 全隊獲勝！' : '😢 這次沒撐住')+'</p>'+
+      '<p>'+esc(R.reason)+'</p>'+
+      '<div class="panel"><h2>最後的城市</h2><div class="inds">'+indHtml+'</div>'+
+        '<div class="hint">💰 剩下預算 '+G.budget+'</div></div>'+
+      '<div class="panel"><h2>想一想</h2><p>最弱的是「'+R.weak.icon+R.weak.name+'」。'+REFLECT[R.weak.k]+'</p></div>'+
+      statsHtml+
+      '<div class="panel"><h2>這局做過的決定</h2>'+logHtml+'</div>'+
+      '<button class="btn" id="againBtn">再玩一局</button>'+
+      '<p class="foot">這是公民教育遊戲，事件內容為情境模擬，不代表任何政黨或個人的立場。</p>';
+    document.getElementById('againBtn').onclick = function(){ location.reload(); };
+  }
+
+  function render(){
+    if(!G) return renderSetup();
+    if(G.over) return renderResult();
+    renderGame();
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
