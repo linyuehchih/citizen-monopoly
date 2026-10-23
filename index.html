@@ -939,9 +939,9 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
     var idx = await chooseOption(card, opts, p, tile, pi);
     var o = opts[idx];
     applyEffects(o.fx, -o.cost);
-    addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：'+esc(card.title)+'<br>選了「'+esc(o.label)+'」 '+
+    addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：'+esc(card.title)+'<br>選了「'+esc(o.label)+'」'+(G.autoPlayed ? '（電腦代打）' : '')+' '+
       '<span class="chips" style="display:inline-flex">'+costChip(o.cost)+fxChips(o.fx)+'</span>');
-    G.log.push({round:G.round, who:p.name, bot:p.bot, seat:pi, tile:tile.name, title:card.title, choice:o.label, cost:o.cost,
+    G.log.push({round:G.round, who:p.name, bot:p.bot, auto:!!G.autoPlayed, seat:pi, tile:tile.name, title:card.title, choice:o.label, cost:o.cost,
                 cardId:card.id, idx:idx, real: idx < card.options.length});
     // 匿名統計：這台裝置的真人自己選的才記；朋友的選擇由朋友自己的裝置記
     if(!p.bot && !p.remote && !G.autoPlayed && idx < card.options.length && window.CityGame && typeof window.CityGame.onChoice==='function'){
@@ -1044,7 +1044,8 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
             (afford ? '' : '<div class="hint">預算不夠</div>')+
             (P.picked===i ? '<div class="pickTag">✅ '+esc(actor.name)+' 選了這個</div>' : '')+
             suggestTags(P, i)+'</button>';
-        }).join('');
+        }).join('')+
+        '<div style="text-align:right;margin-top:4px"><button class="btn ghost" id="exitInPrompt">🚪 離開遊戲</button></div>';
     }
     if(P.kind === 'result'){
       return '<h2>'+esc(P.title)+'</h2>'+
@@ -1069,6 +1070,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
   }
 
   function showPromptModal(){
+    if(EXITING) return;                      // 正在問「要不要離開」，先不要被新的提示蓋掉
     var P = G.prompt;
     NET.shownKey = P ? P.id+':'+P.rev : '';
     if(!P){ closeModal(); return; }
@@ -1082,6 +1084,41 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
     });
     var go = ov.querySelector('#goOn');
     if(go) go.onclick = function(){ ackNow(P); };
+    var ex = ov.querySelector('#exitInPrompt');
+    if(ex) ex.onclick = confirmExit;
+  }
+
+  /* ---------- 離開遊戲 ---------- */
+  var EXITING = false;
+  function confirmExit(){
+    var host = isHost(), guest = isGuest();
+    var msg = host ? '你是房主，這局是在你的瀏覽器上跑的。離開後整局會結束，朋友的畫面也會停止。' :
+              guest ? '離開後，你的位子會由電腦代打（約 15 秒內換手），不影響其他人繼續玩。' :
+              '離開後這局不會保留，會回到首頁。';
+    EXITING = true;
+    var ov = modal('<h2>要離開遊戲嗎？</h2><p class="scene">'+msg+'</p>'+
+      '<div class="row" style="margin-top:12px"><button class="btn ghost" id="exitNo">繼續玩</button>'+
+      '<button class="btn" id="exitYes">'+(host ? '結束並回首頁' : '離開遊戲')+'</button></div>');
+    ov.querySelector('#exitNo').onclick = function(){
+      EXITING = false; closeModal();
+      if(G && G.prompt) showPromptModal();
+    };
+    ov.querySelector('#exitYes').onclick = function(){ this.disabled = true; exitGame(); };
+  }
+  async function exitGame(){
+    if(NET.on){
+      if(isHost()){                          // 房主：先通知大家「這局結束了」，再離開
+        try{ await Promise.race([CityNet.setStatus(NET.code, 'closed'), sleep(1500)]); }catch(e){}
+      }
+      try{ CityNet.leave(); CityNet.clearSession(); }catch(e){}   // 清掉「記住房間」，重新整理才不會又被拉回來
+    }
+    location.href = baseUrl();
+  }
+  function renderClosed(){
+    app.innerHTML = '<h1>🏙️ 市民大富翁</h1><div class="panel hl"><h2>房主已離開</h2>'+
+      '<p style="margin:0">這一局結束了。你可以回到首頁，自己玩一局或開一個新房間。</p></div>'+
+      '<button class="btn" id="closedHome">回到首頁</button>';
+    document.getElementById('closedHome').onclick = leaveRoom;
   }
 
   function chooseNow(P, i){
@@ -1326,7 +1363,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
 
   // 朋友：收到房主發布的畫面，換成這份畫面並重畫（包含彈出視窗）
   function applyView(v){
-    if(!v || !v.core) return;
+    if(NET.closed || !v || !v.core) return;
     var core = JSON.parse(v.core);
     var feed = v.feed ? JSON.parse(v.feed) : [];
     var prompt = v.prompt ? JSON.parse(v.prompt) : null;
@@ -1358,6 +1395,9 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
 
   function onRoomUpdate(info){
     NET.meta = info.meta; NET.seats = info.seats;
+    if(isGuest() && info.meta.status === 'closed' && !(G && G.over)){   // 房主離開了：這局結束
+      NET.closed = true; EXITING = false; closeModal(); render(); return;
+    }
     if(NET.on && (!G || (isGuest() && info.meta.status === 'lobby'))) render();
   }
 
@@ -1563,7 +1603,10 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
       b.onclick = function(){ CityNet.setSeat(NET.code, +b.dataset.bot, {type:'bot', name:'電腦'+String.fromCharCode(65 + (+b.dataset.bot))}).catch(netError); };
     });
   }
-  function leaveRoom(){
+  async function leaveRoom(){
+    if(isHost() && !(G && G.over)){          // 房主在大廳離開：通知還在等的朋友
+      try{ await Promise.race([CityNet.setStatus(NET.code, 'closed'), sleep(1500)]); }catch(e){}
+    }
     try{ CityNet.leave(); CityNet.clearSession(); }catch(e){}
     location.href = baseUrl();
   }
@@ -1661,7 +1704,8 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
         '<div class="center">'+trees+'<div class="who">'+tokenHtml(G.turn)+esc(p.name)+'</div>'+
         '<div class="dice"'+(G.dice ? animAttr('dice|'+G.round+'|'+G.turn+'|'+G.dice, 350, 0, '--rot:'+(((G.dice*47+G.turn*13) % 61) - 30)+'deg') : '')+'>'+DICE[G.dice||0]+'</div>'+action+'</div></div></div>'+
       '<div class="row" style="margin:-6px 0 10px"><span class="hint" style="min-height:0">視角</span>'+
-        '<span class="seg"><button data-view="3d" class="'+(VIEW_FLAT?'':'on')+'">立體</button><button data-view="flat" class="'+(VIEW_FLAT?'on':'')+'">平面</button></span></div>'+
+        '<span class="seg"><button data-view="3d" class="'+(VIEW_FLAT?'':'on')+'">立體</button><button data-view="flat" class="'+(VIEW_FLAT?'on':'')+'">平面</button></span>'+
+        '<button class="btn ghost" id="exitBtn" style="margin-left:auto">🚪 離開遊戲</button></div>'+
       feedHtml+
       '<p class="foot">小海豚走到🚩就是過關線（'+C.winSatisfaction+'）；其他三項的黑色小線是 '+C.minOtherIndicator+'，要超過它。</p>';
 
@@ -1669,6 +1713,8 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
       b.onclick = function(){ setView(b.dataset.view === 'flat'); };
     });
     syncPieces(app.querySelector('.board'));
+    var eb = document.getElementById('exitBtn');
+    if(eb) eb.onclick = confirmExit;
     var rb = document.getElementById('rollBtn');
     if(rb) rb.onclick = function(){
       if(isGuest()){ CityNet.sendAction(NET.code, NET.me, 'roll'); rb.disabled = true; return; }   // 朋友：請房主幫忙擲
@@ -1703,7 +1749,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
     if(window.CityStats){
       // 只看「自己」選的：單機是所有真人，連線是自己的座位
       var mine = G.log.filter(function(l){
-        return (NET.on ? l.seat === NET.me : !l.bot) && l.real && window.CityStats.share(l.cardId, l.idx);
+        return (NET.on ? l.seat === NET.me : !l.bot) && !l.auto && l.real && window.CityStats.share(l.cardId, l.idx);
       });
       if(mine.length){
         statsHtml = '<div class="panel"><h2>你和大家的想法</h2><ul class="log">'+mine.map(function(l){
@@ -1713,7 +1759,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
       }
     }
     var logHtml = G.log.length ? '<ol class="log">'+G.log.map(function(l){
-      return '<li>第 '+l.round+' 回合・'+esc(l.tile)+'：'+esc(l.title)+' → '+esc(l.choice)+'（'+esc(l.who)+'）</li>';
+      return '<li>第 '+l.round+' 回合・'+esc(l.tile)+'：'+esc(l.title)+' → '+esc(l.choice)+'（'+esc(l.who)+(l.auto ? '・電腦代打' : '')+'）</li>';
     }).join('')+'</ol>' : '<p class="hint">這局沒有處理任何事件。</p>';
 
     app.innerHTML =
@@ -1735,6 +1781,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
 
   function render(){
     applyTone(!G ? 1 : G.over ? 4 : (G.round || 1));   // 開始前＝清晨、結算＝白天、遊戲中跟著回合
+    if(NET.closed){ detachPieces(); return renderClosed(); }
     if(NET.on && !G) return renderLobby();
     if(!G) return renderSetup();
     if(G.over) return renderResult();
