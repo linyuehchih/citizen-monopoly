@@ -178,6 +178,9 @@ html.flat .stage{margin-bottom:22px}
 
 /* 連線：大廳、建議、輸入框 */
 input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 12px;min-width:0;flex:1;min-height:44px}
+textarea{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 12px;width:100%;resize:vertical;min-height:96px}
+.agree{display:flex;align-items:center;gap:10px;min-height:44px;margin:4px 0;cursor:pointer}
+.agree input{width:22px;height:22px;flex:none}
 .sug{margin-top:6px;font-size:13px;color:var(--accent)}
 .roomcode{font-size:40px;font-weight:800;letter-spacing:8px;text-align:center;margin:4px 0 2px}
 .seatrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
@@ -340,7 +343,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
 <script src="data/game-data.js?v=e03ba9bc"></script>
 <script src="bot.js?v=8139f834"></script>
 <script src="stats-config.js?v=6ddb56d7"></script>
-<script src="stats.js?v=14a96044"></script>
+<script src="stats.js?v=cd07364f"></script>
 <script src="firebase-config.js?v=ed356509"></script>
 <script src="net.js?v=0f377765"></script>
 <script>
@@ -958,7 +961,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
     if(!window.CityStats || !card || idx >= card.options.length) return '';
     var s = window.CityStats.share(card.id, idx);
     if(!s) return '';
-    return '<div class="res" style="margin-top:8px">📊 在所有玩家裡，<b>'+s.pct+'%</b> 的人跟你選一樣（共 '+s.total+' 人選過這張卡）'+
+    return '<div class="res" style="margin-top:8px">📊 在所有玩家裡，<b>'+s.pct+'%</b> 的人跟你選一樣（'+(s.small ? '目前只有 '+s.total+' 人選過，僅供參考' : '共 '+s.total+' 人選過這張卡')+'）'+
       '<div class="hint">這是玩家選擇統計，不是民意調查。</div></div>';
   }
 
@@ -1045,7 +1048,9 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
             (P.picked===i ? '<div class="pickTag">✅ '+esc(actor.name)+' 選了這個</div>' : '')+
             suggestTags(P, i)+'</button>';
         }).join('')+
-        '<div style="text-align:right;margin-top:4px"><button class="btn ghost" id="exitInPrompt">🚪 離開遊戲</button></div>';
+        '<div class="row" style="justify-content:space-between;margin-top:4px">'+
+          ((me && P.picked == null && window.CityStats && window.CityStats.enabled()) ? '<button class="btn ghost" id="ideaBtn">💡 我有別的點子</button>' : '<span></span>')+
+          '<button class="btn ghost" id="exitInPrompt">🚪 離開遊戲</button></div>';
     }
     if(P.kind === 'result'){
       return '<h2>'+esc(P.title)+'</h2>'+
@@ -1070,7 +1075,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
   }
 
   function showPromptModal(){
-    if(EXITING) return;                      // 正在問「要不要離開」，先不要被新的提示蓋掉
+    if(EXITING || IDEA_OPEN) return;         // 正在問「要不要離開」或在寫點子，先不要被新的提示蓋掉
     var P = G.prompt;
     NET.shownKey = P ? P.id+':'+P.rev : '';
     if(!P){ closeModal(); return; }
@@ -1086,6 +1091,54 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
     if(go) go.onclick = function(){ ackNow(P); };
     var ex = ov.querySelector('#exitInPrompt');
     if(ex) ex.onclick = confirmExit;
+    var ib = ov.querySelector('#ideaBtn');
+    if(ib) ib.onclick = function(){ openIdeaDialog(P); };
+  }
+
+  /* ---------- 玩家「點子」：寫下選項以外的想法 ---------- */
+  var IDEA_OPEN = false;
+  var IDEA_NOTICE = '你寫的內容之後可能會公開顯示在「大家的選擇」頁面。請勿涉及污辱、毀謗或不當言詞，' +
+    '也請不要填寫姓名、電話、住址等個人資料；內容需由你自行負責，違反者需自負法律責任。主辦人不代表認同任何玩家的想法。';
+  function closeIdeaDialog(){
+    IDEA_OPEN = false; closeModal();
+    if(G && G.prompt) showPromptModal();
+  }
+  function openIdeaDialog(P){
+    var card = cardById(P.cardId);
+    if(!card) return;
+    IDEA_OPEN = true;
+    var max = window.CityStats.IDEA_MAX;
+    var ov = modal('<h2>💡 我有別的點子</h2>'+
+      '<p class="scene">「'+esc(card.title)+'」這個問題，除了前面的選項，你還想到什麼做法？</p>'+
+      '<textarea id="ideaText" maxlength="'+max+'" rows="4" placeholder="寫下你的點子（最多 '+max+' 字）"></textarea>'+
+      '<div class="hint" id="ideaCount" style="min-height:0;text-align:right">0 / '+max+'</div>'+
+      '<div class="res" style="font-size:13px">'+esc(IDEA_NOTICE)+'</div>'+
+      '<label class="agree"><input type="checkbox" id="ideaAgree"><span>我了解並同意以上說明</span></label>'+
+      '<div class="err" id="ideaErr"></div>'+
+      '<div class="row" style="margin-top:8px"><button class="btn ghost" id="ideaCancel">取消</button>'+
+      '<button class="btn" id="ideaSend" disabled>送出點子</button></div>');
+    var ta = ov.querySelector('#ideaText'), cnt = ov.querySelector('#ideaCount'), ag = ov.querySelector('#ideaAgree');
+    var send = ov.querySelector('#ideaSend'), err = ov.querySelector('#ideaErr'), busy = false;
+    function refresh(){
+      cnt.textContent = Array.from(ta.value).length+' / '+max;
+      send.disabled = busy || !ag.checked || !window.CityStats.ideaClean(ta.value);
+    }
+    ta.oninput = function(){ err.textContent = ''; refresh(); };
+    ag.onchange = refresh;
+    ov.querySelector('#ideaCancel').onclick = closeIdeaDialog;
+    send.onclick = function(){
+      var why = window.CityStats.ideaProblem(ta.value);
+      if(why){ err.textContent = why; return; }
+      busy = true; refresh(); send.textContent = '送出中…';
+      window.CityStats.submitIdea(P.cardId, ta.value).then(function(r){
+        busy = false;
+        if(r.ok){
+          ov.querySelector('.sheet').innerHTML = '<h2>謝謝你的點子！🙌</h2><p class="scene">我們已經收到了。</p>';
+          setTimeout(closeIdeaDialog, 1400);
+        } else { send.textContent = '送出點子'; err.textContent = r.message || '送出失敗，請稍後再試。'; refresh(); }
+      });
+    };
+    ta.focus();
   }
 
   /* ---------- 離開遊戲 ---------- */
@@ -1754,7 +1807,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
       if(mine.length){
         statsHtml = '<div class="panel"><h2>你和大家的想法</h2><ul class="log">'+mine.map(function(l){
           var s = window.CityStats.share(l.cardId, l.idx);
-          return '<li>'+esc(l.title)+'：你選「'+esc(l.choice)+'」，'+s.pct+'% 的玩家跟你一樣</li>';
+          return '<li>'+esc(l.title)+'：你選「'+esc(l.choice)+'」，'+s.pct+'% 的玩家跟你一樣'+(s.small ? '（目前只有 '+s.total+' 人選過，僅供參考）' : '')+'</li>';
         }).join('')+'</ul><div class="hint">這是玩家選擇統計，不是民意調查。</div></div>';
       }
     }
