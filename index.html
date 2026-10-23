@@ -105,18 +105,48 @@ h2{font-size:18px;margin:0 0 8px}
 .delta.pos{color:var(--good)} .delta.neg{color:var(--bad)}
 
 /* 棋盤 */
-.board{display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(6,1fr);gap:4px;aspect-ratio:1/1}
-.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px 4px;box-shadow:0 2px 4px rgba(120,90,50,.10);
-  font-size:10.5px;line-height:1.2;display:flex;flex-direction:column;justify-content:space-between;min-width:0;overflow:hidden}
-.tile .top{display:flex;justify-content:space-between;color:var(--muted);font-size:9px}
-.tile .nm{word-break:break-all}
+/* 立體視角：棋盤往後傾 --tilt，格子上的裝飾反向轉回來「站起來」；切到平面時 --tilt 變 0 */
+:root{--tilt:16deg; --ar:1/1.2}
+@media (min-width:600px){ :root{--tilt:20deg; --ar:1/1.1} }
+html.flat{--tilt:0deg}
+.stage{perspective:1300px;perspective-origin:50% 35%;margin:4px 0 34px}
+html.flat .stage{margin-bottom:22px}
+.board{position:relative;display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(6,1fr);gap:4px;aspect-ratio:var(--ar);
+  padding:8px;border-radius:26px;background:color-mix(in srgb,#8fcf8f 26%,var(--panel));
+  box-shadow:0 10px 0 color-mix(in srgb,#5f9a63 50%,var(--line)),0 22px 28px rgba(60,80,40,.22);
+  transform:rotateX(var(--tilt));transform-style:preserve-3d}
+.tile{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px 4px;
+  box-shadow:0 4px 0 color-mix(in srgb,var(--line) 70%,#8b7355);
+  font-size:10.5px;line-height:1.2;display:flex;flex-direction:column;min-width:0;transform-style:preserve-3d}
+.tile .top{position:absolute;left:4px;right:4px;top:3px;display:flex;justify-content:space-between;color:var(--muted);font-size:9px}
+.tile .dz{flex:1 1 0;min-height:0;position:relative}
+.tile .nm{word-break:break-all;overflow:hidden;position:relative}
+.deco{position:absolute;left:50%;bottom:0;width:27px;height:27px;margin-left:-13.5px;overflow:visible;pointer-events:none;
+  transform-origin:50% 100%;transform:rotateX(calc(var(--tilt) * -1))}
+.deco{filter:drop-shadow(0 0 .7px rgba(90,70,40,.6))}
+@media (min-width:600px){ .deco{width:40px;height:40px;margin-left:-20px} }
+/* 棋盤上的小人：一整層放在棋盤上，不隨整頁重畫而重建；位置與跳躍由程式逐格計算 */
+.pl3d{position:absolute;inset:0;transform-style:preserve-3d;transform:translateZ(2px);pointer-events:none}
+.pc{position:absolute;left:0;top:0;width:0;height:0;transform-style:preserve-3d}
+.pc .sh{position:absolute;left:-9px;top:-3px;width:18px;height:6px;border-radius:50%;background:rgba(40,30,10,.28)}
+.pc .bd{position:absolute;left:-11px;bottom:0;width:22px;height:31px;transform-origin:50% 100%;
+  filter:drop-shadow(0 0 .7px rgba(60,40,20,.75))}
+.pc.me .bd{filter:drop-shadow(0 0 .7px rgba(60,40,20,.75)) drop-shadow(0 0 4px color-mix(in srgb,var(--accent) 80%,#fff))}
+@media (min-width:600px){
+  .pc .sh{left:-12px;top:-4px;width:24px;height:8px}
+  .pc .bd{left:-14px;width:28px;height:40px}
+}
+.center .deco{width:34px;height:34px;margin:0;left:auto;bottom:auto}
+.center .deco.c1{left:6px;top:4px}.center .deco.c2{right:6px;top:4px}
+.center .deco.c3{left:6px;bottom:4px}.center .deco.c4{right:6px;bottom:4px}
 .tile.event{border-top:3px solid var(--accent)}
 .tile.chance{border-top:3px solid #8b5cf6}
 .tile.landmark{border-top:3px solid var(--good)}
 .tile.rest{border-top:3px solid #94a3b8}
 .tile.here{outline:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
-.tokens{display:flex;gap:2px;flex-wrap:wrap;min-height:16px}
-.center{grid-row:2/span 4;grid-column:2/span 4;background:var(--panel);border:1px dashed var(--line);border-radius:18px;box-shadow:var(--shadow);
+.tokens{display:flex;gap:2px;flex-wrap:wrap;min-height:14px;position:relative}
+.center{position:relative;transform-style:preserve-3d;
+  grid-row:2/span 4;grid-column:2/span 4;background:var(--panel);border:1px dashed var(--line);border-radius:18px;box-shadow:var(--shadow);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px;text-align:center}
 .who{display:flex;align-items:center;gap:6px;font-weight:700}
 .dice{font-size:56px;line-height:1;display:inline-block}
@@ -187,6 +217,125 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
 </style>
 </head>
 <body>
+<!-- 棋盤格子的手繪裝飾（黏土風：圓角、單色加一層暗面、一點高光）。畫在 40x40 的框裡，底邊在 y=38 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <symbol id="d-tree" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="12" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="18" y="26" width="4" height="11" rx="1.5" fill="#8a5a3a"/>
+    <circle cx="13" cy="23" r="7" fill="#3fa05f"/><circle cx="27" cy="23" r="7" fill="#3fa05f"/>
+    <circle cx="20" cy="17" r="11" fill="#52b36e"/><circle cx="16" cy="13" r="3.2" fill="#86d79a"/>
+  </symbol>
+  <symbol id="d-trail" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="8" y="26" width="3.5" height="11" rx="1.5" fill="#8a5a3a"/><circle cx="10" cy="20" r="8" fill="#52b36e"/><circle cx="7.5" cy="17" r="2.5" fill="#86d79a"/>
+    <rect x="27" y="29" width="3" height="8" rx="1.5" fill="#8a5a3a"/><circle cx="28.5" cy="24" r="6.5" fill="#3fa05f"/>
+    <path d="M14 38 Q20 33 26 38 Z" fill="#e9d6b0"/>
+  </symbol>
+  <symbol id="d-park" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="9" y="25" width="4" height="12" rx="1.5" fill="#8a5a3a"/><circle cx="11" cy="18" r="9" fill="#52b36e"/><circle cx="8" cy="14" r="3" fill="#86d79a"/>
+    <rect x="21" y="29" width="15" height="3.5" rx="1.5" fill="#c99a6b"/><rect x="22" y="32" width="2.5" height="5" fill="#9c6b45"/><rect x="32.5" y="32" width="2.5" height="5" fill="#9c6b45"/>
+    <circle cx="24" cy="25" r="2.4" fill="#f28aa5"/><circle cx="30" cy="26" r="2.4" fill="#f4b942"/>
+  </symbol>
+  <symbol id="d-seaside" viewBox="0 0 40 40">
+    <rect x="19" y="14" width="2.4" height="23" rx="1" fill="#9c6b45"/>
+    <path d="M5 19 Q20 1 35 19 Z" fill="#e0584f"/><path d="M13 19 Q20 7 27 19 Z" fill="#fff1d6"/>
+    <path d="M2 36 q4.5 -4 9 0 t9 0 t9 0 t9 0" fill="none" stroke="#5aa0dc" stroke-width="3.2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="d-river" viewBox="0 0 40 40">
+    <path d="M3 24 q4.5 -4 9 0 t9 0 t9 0 t9 0" fill="none" stroke="#8cc4ee" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M3 31 q4.5 -4 9 0 t9 0 t9 0 t9 0" fill="none" stroke="#5aa0dc" stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M3 37 q4.5 -4 9 0 t9 0 t9 0 t9 0" fill="none" stroke="#3b7fbd" stroke-width="3.2" stroke-linecap="round"/>
+    <rect x="29" y="9" width="3" height="12" rx="1.2" fill="#8a5a3a"/><circle cx="30.5" cy="7" r="6" fill="#52b36e"/><circle cx="28.5" cy="5" r="2" fill="#86d79a"/>
+  </symbol>
+  <symbol id="d-station" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="5" y="17" width="30" height="20" rx="2" fill="#fff1d6"/><rect x="5" y="31" width="30" height="6" rx="2" fill="#ecd5a6"/>
+    <path d="M2 18 L20 6 L38 18 Z" fill="#e0584f"/><path d="M8 17 L20 9 L32 17 Z" fill="#f1857b"/>
+    <circle cx="20" cy="15" r="3.6" fill="#fff" stroke="#9c6b45" stroke-width="1.2"/><path d="M20 13 V15.2 H21.6" fill="none" stroke="#9c6b45" stroke-width="1"/>
+    <rect x="16" y="25" width="8" height="12" rx="2" fill="#5aa0dc"/><rect x="8" y="23" width="5.5" height="6" rx="1" fill="#9ccaf0"/><rect x="26.5" y="23" width="5.5" height="6" rx="1" fill="#9ccaf0"/>
+  </symbol>
+  <symbol id="d-busstop" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="14" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="18.5" y="12" width="3" height="25" rx="1.2" fill="#9aa0ab"/>
+    <circle cx="20" cy="9" r="8" fill="#5aa0dc"/><rect x="14.5" y="5" width="11" height="8" rx="2" fill="#fff"/>
+    <rect x="14.5" y="8" width="11" height="2" fill="#5aa0dc"/><circle cx="17.5" cy="13.2" r="1.3" fill="#3b7fbd"/><circle cx="22.5" cy="13.2" r="1.3" fill="#3b7fbd"/>
+    <rect x="25" y="30" width="11" height="3" rx="1.5" fill="#c99a6b"/><rect x="26" y="33" width="2" height="4" fill="#9c6b45"/><rect x="33" y="33" width="2" height="4" fill="#9c6b45"/>
+  </symbol>
+  <symbol id="d-shops" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="3" y="19" width="16" height="18" rx="1.5" fill="#fff1d6"/><path d="M1 20 L11 10 L21 20 Z" fill="#e0584f"/>
+    <rect x="5.5" y="24" width="5" height="5" rx="1" fill="#9ccaf0"/><rect x="12.5" y="28" width="4" height="9" rx="1.2" fill="#9c6b45"/>
+    <rect x="21" y="14" width="16" height="23" rx="1.5" fill="#f6d9de"/><rect x="21" y="12" width="16" height="4" rx="1.5" fill="#5aa0dc"/>
+    <rect x="23.5" y="19" width="4.5" height="5" rx="1" fill="#fff"/><rect x="30" y="19" width="4.5" height="5" rx="1" fill="#fff"/><rect x="26" y="28" width="5" height="9" rx="1.2" fill="#9c6b45"/>
+  </symbol>
+  <symbol id="d-nightmarket" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <path d="M4 17 H36 L33 8 H7 Z" fill="#e0584f"/><path d="M12 17 L13.5 8 H18 L17 17 Z M24 17 L22 8 H26.5 L28 17 Z" fill="#fff1d6"/>
+    <rect x="6" y="28" width="28" height="9" rx="2" fill="#c99a6b"/><rect x="6" y="28" width="28" height="3" rx="1.5" fill="#e0b98a"/>
+    <path d="M9 17 V20 M31 17 V20" stroke="#9c6b45" stroke-width="1.2"/><ellipse cx="9" cy="23" rx="3" ry="3.6" fill="#e0584f"/><ellipse cx="31" cy="23" rx="3" ry="3.6" fill="#e0584f"/>
+    <rect x="7" y="19.6" width="4" height="1.8" rx=".8" fill="#f4b942"/><rect x="29" y="19.6" width="4" height="1.8" rx=".8" fill="#f4b942"/>
+    <circle cx="16" cy="26" r="2.2" fill="#f4b942"/><circle cx="22" cy="26" r="2.2" fill="#f28aa5"/>
+  </symbol>
+  <symbol id="d-market" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <path d="M4 18 H36 L33 9 H7 Z" fill="#52b36e"/><path d="M12 18 L13.5 9 H18 L17 18 Z M24 18 L22 9 H26.5 L28 18 Z" fill="#fff"/>
+    <rect x="6" y="28" width="28" height="9" rx="2" fill="#c99a6b"/>
+    <circle cx="12" cy="25" r="3.2" fill="#f08a4b"/><circle cx="19" cy="25" r="3.2" fill="#e0584f"/><circle cx="26" cy="25" r="3.2" fill="#f4b942"/><circle cx="31" cy="26" r="2.6" fill="#52b36e"/>
+  </symbol>
+  <symbol id="d-creative" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="16" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="7" y="21" width="26" height="16" rx="2" fill="#62b6b0"/><path d="M4 22 L20 11 L36 22 Z" fill="#9b7bd1"/>
+    <rect x="16" y="27" width="8" height="10" rx="2" fill="#fff1d6"/><rect x="9" y="25" width="4.5" height="4.5" rx="1" fill="#fff1d6"/><rect x="26.5" y="25" width="4.5" height="4.5" rx="1" fill="#fff1d6"/>
+    <path d="M3 7 Q20 14 37 7" fill="none" stroke="#9c6b45" stroke-width="1"/>
+    <path d="M7 8 l3 0 l-1.5 4 z" fill="#f4b942"/><path d="M14 10 l3 0 l-1.5 4 z" fill="#f28aa5"/><path d="M23 10 l3 0 l-1.5 4 z" fill="#5aa0dc"/><path d="M30 8 l3 0 l-1.5 4 z" fill="#e0584f"/>
+  </symbol>
+  <symbol id="d-oldhouse" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="8" y="22" width="24" height="15" rx="1.5" fill="#fff1d6"/><path d="M8 28 H32 M14 22 V37 M20 22 V37 M26 22 V37" stroke="#c99a6b" stroke-width="1"/>
+    <path d="M2 23 Q20 3 38 23 Z" fill="#56627a"/><path d="M8 21 Q20 8 32 21" fill="none" stroke="#8591ab" stroke-width="1.6"/>
+    <rect x="17" y="28" width="6" height="9" rx="1.2" fill="#9c6b45"/>
+  </symbol>
+  <symbol id="d-mansion" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="4" y="30" width="32" height="7" rx="1.5" fill="#fff1d6"/>
+    <rect x="7" y="15" width="5" height="22" rx="1" fill="#e0584f"/><rect x="28" y="15" width="5" height="22" rx="1" fill="#e0584f"/>
+    <rect x="3" y="11" width="34" height="5" rx="1.5" fill="#b83f39"/><path d="M1 12 Q20 1 39 12 Z" fill="#56627a"/>
+    <rect x="13" y="19" width="14" height="11" rx="1" fill="#f4b942" opacity=".85"/><path d="M20 19 V30" stroke="#b83f39" stroke-width="1"/>
+  </symbol>
+  <symbol id="d-cityhall" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="17" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="19.5" y="1" width="1.3" height="6" fill="#9aa0ab"/><path d="M20.8 1.5 H27 L25 3.2 L27 5 H20.8 Z" fill="#e0584f"/>
+    <path d="M3 15 L20 6 L37 15 Z" fill="#ecd5a6"/><rect x="3" y="15" width="34" height="3" rx="1" fill="#fff1d6"/>
+    <rect x="7" y="18" width="3.5" height="16" rx="1" fill="#fff"/><rect x="14.5" y="18" width="3.5" height="16" rx="1" fill="#fff"/><rect x="22" y="18" width="3.5" height="16" rx="1" fill="#fff"/><rect x="29.5" y="18" width="3.5" height="16" rx="1" fill="#fff"/>
+    <rect x="3" y="33" width="34" height="4.5" rx="1.5" fill="#c5c9d1"/>
+  </symbol>
+  <symbol id="d-hospital" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="16" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="6" y="12" width="28" height="25" rx="2.5" fill="#fff"/><rect x="6" y="12" width="28" height="4" rx="2" fill="#c5c9d1"/>
+    <rect x="18" y="17" width="4" height="10" rx="1" fill="#e0584f"/><rect x="15" y="20" width="10" height="4" rx="1" fill="#e0584f"/>
+    <rect x="16" y="29" width="8" height="8" rx="1.5" fill="#5aa0dc"/><rect x="8.5" y="20" width="4" height="4" rx="1" fill="#9ccaf0"/><rect x="27.5" y="20" width="4" height="4" rx="1" fill="#9ccaf0"/>
+  </symbol>
+  <symbol id="d-community" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="16" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="6" y="19" width="28" height="18" rx="2" fill="#fff1d6"/><path d="M3 20 L20 7 L37 20 Z" fill="#f08a4b"/>
+    <path d="M20 31 C13 27 14 22 17 22.4 C18.6 22.6 19.6 23.6 20 25 C20.4 23.6 21.4 22.6 23 22.4 C26 22 27 27 20 31 Z" fill="#f28aa5"/>
+    <rect x="8.5" y="30" width="4.5" height="7" rx="1" fill="#9c6b45"/><rect x="27" y="30" width="4.5" height="7" rx="1" fill="#9c6b45"/>
+  </symbol>
+  <symbol id="d-apartment" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="15" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="8" y="7" width="24" height="30" rx="2" fill="#d9c7b0"/><rect x="8" y="7" width="24" height="3.5" rx="1.5" fill="#b9a68d"/>
+    <rect x="11.5" y="13" width="5" height="5" rx="1" fill="#f4b942"/><rect x="17.5" y="13" width="5" height="5" rx="1" fill="#9ccaf0"/><rect x="23.5" y="13" width="5" height="5" rx="1" fill="#9ccaf0"/>
+    <rect x="11.5" y="20.5" width="5" height="5" rx="1" fill="#9ccaf0"/><rect x="17.5" y="20.5" width="5" height="5" rx="1" fill="#f4b942"/><rect x="23.5" y="20.5" width="5" height="5" rx="1" fill="#9ccaf0"/>
+    <rect x="17" y="29" width="6" height="8" rx="1.2" fill="#9c6b45"/><path d="M14 7 V3 M26 7 V4" stroke="#9aa0ab" stroke-width="1.2"/>
+  </symbol>
+  <symbol id="d-school" viewBox="0 0 40 40">
+    <ellipse cx="20" cy="37.5" rx="18" ry="2.5" fill="rgba(0,0,0,.14)"/>
+    <rect x="3" y="20" width="34" height="17" rx="2" fill="#f7d774"/><rect x="14" y="9" width="12" height="13" rx="1.5" fill="#f3c94f"/>
+    <path d="M12 10 L20 3 L28 10 Z" fill="#e0584f"/><circle cx="20" cy="14.5" r="3.3" fill="#fff" stroke="#9c6b45" stroke-width="1"/><path d="M20 12.6 V14.7 H21.5" fill="none" stroke="#9c6b45" stroke-width="1"/>
+    <rect x="17" y="27" width="6" height="10" rx="1.5" fill="#5aa0dc"/><rect x="6" y="24.5" width="6" height="5.5" rx="1" fill="#9ccaf0"/><rect x="28" y="24.5" width="6" height="5.5" rx="1" fill="#9ccaf0"/>
+  </symbol>
+</defs></svg>
 <div id="app" class="wrap"></div>
 <script src="data/game-data.js?v=e03ba9bc"></script>
 <script src="bot.js?v=8139f834"></script>
@@ -212,6 +361,121 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
   var TOKEN_COLORS = ['#dc2626','#2563eb','#16a34a','#ca8a04'];
   var TYPE_ICON = {event:'📋', chance:'🎁', landmark:'📍', rest:'☕'};
   var DICE = ['🎲','⚀','⚁','⚂','⚃','⚄','⚅'];
+
+  // 每一格的裝飾（對應 <symbol id="d-名稱">）
+  var DECO = {1:'station',2:'shops',3:'nightmarket',4:'creative',5:'oldhouse',6:'mansion',7:'shops',8:'river',9:'market',10:'cityhall',
+              11:'shops',12:'park',13:'seaside',14:'nightmarket',15:'hospital',16:'community',17:'apartment',18:'school',19:'trail',20:'busstop'};
+
+  /* ---------- 棋盤視角：立體（預設）或平面，記在這個瀏覽器 ---------- */
+  var VIEW_FLAT = false;
+  try{ VIEW_FLAT = localStorage.getItem('cityViewFlat') === '1'; }catch(e){}
+  document.documentElement.classList.toggle('flat', VIEW_FLAT);
+  function setView(flat){
+    VIEW_FLAT = flat;
+    document.documentElement.classList.toggle('flat', flat);
+    try{ localStorage.setItem('cityViewFlat', flat ? '1' : '0'); }catch(e){}
+    if(G && !G.over) render();
+  }
+
+  /* ---------- 棋盤上的小人 ----------
+     整個畫面會一直重畫，所以小人放在自己的一層（PC.layer），每次重畫後再接回新的棋盤；
+     走路動畫由 requestAnimationFrame 依時間逐格計算，不靠 CSS，所以不會被重畫打斷 */
+  var PC = {game:null, layer:null, items:[], board:null, raf:0};
+  var reduceMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+
+  function personSvg(i){
+    return '<svg viewBox="0 0 24 34" width="100%" height="100%" aria-hidden="true">'+
+      '<rect x="7" y="25" width="4" height="7" rx="2" fill="#5b4a3a"/><rect x="13" y="25" width="4" height="7" rx="2" fill="#5b4a3a"/>'+
+      '<rect x="4" y="14" width="16" height="14" rx="6" fill="'+TOKEN_COLORS[i]+'"/><rect x="4" y="23" width="16" height="5" rx="2.5" fill="rgba(0,0,0,.18)"/>'+
+      '<circle cx="3.5" cy="21" r="2.6" fill="#ffd9b5"/><circle cx="20.5" cy="21" r="2.6" fill="#ffd9b5"/>'+
+      '<circle cx="12" cy="9" r="7.5" fill="#ffd9b5"/>'+
+      '<path d="M4.5 8.5 Q5 1 12 1.2 Q19 1 19.5 8.5 Q15 4.5 12 5.5 Q9 4.5 4.5 8.5 Z" fill="#5b3a29"/>'+
+      '<circle cx="9.3" cy="10" r="1" fill="#3b2a20"/><circle cx="14.7" cy="10" r="1" fill="#3b2a20"/>'+
+      '<path d="M10 12.6 Q12 14.2 14 12.6" fill="none" stroke="#c0614a" stroke-width="1" stroke-linecap="round"/>'+
+      '<text x="12" y="24.2" text-anchor="middle" font-size="8" font-weight="700" fill="#fff" font-family="system-ui,sans-serif">'+(i+1)+'</text></svg>';
+  }
+  // 小人站的位置：該格「裝飾區」的下緣中央；每位玩家左右錯開一點，同一格也看得到每個人
+  function pieceSpot(i, idx){
+    var t = PC.board && PC.board.querySelector('.tile[data-id="'+(idx+1)+'"]');
+    if(!t) return null;
+    var dz = t.querySelector('.dz'), n = G.players.length, gap = innerWidth >= 600 ? 11 : 8;
+    return {x: t.offsetLeft + t.offsetWidth/2 + (i - (n-1)/2) * gap,
+            y: t.offsetTop + (dz ? dz.offsetTop + dz.offsetHeight : t.offsetHeight*0.5) + 5};
+  }
+  function placePiece(it, x, y, lift, sy){
+    it.el.style.transform = 'translate3d('+x.toFixed(1)+'px,'+y.toFixed(1)+'px,0)';
+    it.sh.style.transform = 'scale('+(1 - Math.min(.45, lift/45)).toFixed(2)+')';
+    it.bd.style.transform = 'rotateX(calc(var(--tilt) * -1)) translateY('+(-lift).toFixed(1)+'px) scale(1,'+sy.toFixed(3)+')';
+  }
+  function detachPieces(){
+    if(PC.layer && PC.layer.parentNode) PC.layer.parentNode.removeChild(PC.layer);
+    PC.game = null; PC.layer = null; PC.items = []; PC.board = null;
+  }
+  function syncPieces(board){
+    if(!board || !G) return;
+    var fresh = PC.game !== G;
+    if(fresh){
+      detachPieces();
+      PC.layer = document.createElement('div'); PC.layer.className = 'pl3d';
+      PC.items = G.players.map(function(p, i){
+        var el = document.createElement('div'); el.className = 'pc';
+        el.innerHTML = '<div class="sh"></div><div class="bd">'+personSvg(i)+'</div>';
+        PC.layer.appendChild(el);
+        return {i:i, el:el, sh:el.firstChild, bd:el.lastChild, at:p.pos, dest:p.pos, queue:[], hop:null, sq:0, x:0, y:0, ready:false};
+      });
+      PC.game = G;
+    }
+    PC.board = board;
+    board.appendChild(PC.layer);
+    var reduce = !!(reduceMq && reduceMq.matches), tileCount = D.tiles.length;
+    PC.items.forEach(function(it){
+      var target = G.players[it.i].pos;
+      it.el.classList.toggle('me', it.i === G.turn);
+      if(it.ready && target !== it.dest){
+        var steps = (target - it.dest + tileCount) % tileCount;
+        if(reduce || steps > 12 || it.queue.length > 8){ it.queue = []; it.hop = null; it.at = target; it.ready = false; }
+        else for(var s = 1; s <= steps; s++) it.queue.push((it.dest + s) % tileCount);
+      }
+      it.dest = target;
+      if(!it.ready || (!it.hop && !it.queue.length)){        // 靜止：直接放在所在格（棋盤重畫後版面可能微調）
+        var sp = pieceSpot(it.i, it.hop ? it.at : target);
+        if(sp){ it.x = sp.x; it.y = sp.y; placePiece(it, sp.x, sp.y, 0, 1); it.at = target; it.ready = true; }
+      } else if(it.hop){                                      // 正在跳：先擺到目前位置，等下一格動畫接手
+        placePiece(it, it.x, it.y, 0, 1);
+      }
+    });
+    if(PC.items.some(function(it){ return it.hop || it.queue.length; })) startPieceLoop();
+  }
+  function startPieceLoop(){ if(!PC.raf) PC.raf = requestAnimationFrame(pieceTick); }
+  function startHop(it, now){
+    var idx = it.queue.shift(), to = pieceSpot(it.i, idx);
+    if(!to){ it.at = idx; return; }
+    it.hop = {fx:it.x, fy:it.y, to:to, idx:idx, t0:now, dur: it.queue.length >= 2 ? 110 : 160};
+  }
+  function pieceTick(now){
+    PC.raf = 0;
+    var busy = false;
+    PC.items.forEach(function(it){
+      if(!it.hop && it.queue.length) startHop(it, now);
+      if(it.hop){
+        var h = it.hop, t = (now - h.t0) / h.dur;
+        if(t >= 1){
+          it.x = h.to.x; it.y = h.to.y; it.at = h.idx; it.hop = null; it.sq = now;
+          placePiece(it, it.x, it.y, 0, 1);
+          busy = true;                                        // 還有下一格或要壓扁，繼續下一個畫面
+        } else {
+          var e = t < 0 ? 0 : t;
+          placePiece(it, h.fx + (h.to.x - h.fx) * e, h.fy + (h.to.y - h.fy) * e,
+                     4 * e * (1 - e) * (innerWidth >= 600 ? 20 : 15), 1);
+          busy = true;
+        }
+      } else if(it.sq && now - it.sq < 140){                  // 落地壓扁一下
+        placePiece(it, it.x, it.y, 0, 1 - 0.22 * Math.sin(Math.PI * (now - it.sq) / 140));
+        busy = true;
+      } else if(it.sq){ it.sq = 0; placePiece(it, it.x, it.y, 0, 1); }
+    });
+    if(busy) PC.raf = requestAnimationFrame(pieceTick);
+  }
 
   /* ---------- 進場動畫：整個畫面會一直重畫，所以用「這個東西第一次出現的時間」決定播到哪裡 ---------- */
   var SEEN_AT = {};
@@ -1365,13 +1629,15 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
     }
     var tilesHtml = D.tiles.map(function(t){
       var pos = tilePos(t.id);
-      var here = G.players.map(function(pl,i){ return pl.pos===t.id-1 ? tokenHtml(i) : ''; }).join('');
       var isHere = G.players.some(function(pl){ return pl.pos===t.id-1; }) && G.players[G.turn].pos===t.id-1;
       var bonus = t.bonus ? IND.filter(function(i){ return i.k===t.bonus; })[0].icon : '';
-      return '<div class="tile '+t.type+(isHere?' here':'')+'" style="grid-row:'+pos.r+';grid-column:'+pos.c+'">'+
+      var deco = DECO[t.id] ? '<svg class="deco" viewBox="0 0 40 40" aria-hidden="true"><use href="#d-'+DECO[t.id]+'"/></svg>' : '';
+      return '<div class="tile '+t.type+(isHere?' here':'')+'" data-id="'+t.id+'" style="grid-row:'+pos.r+';grid-column:'+pos.c+'">'+
         '<div class="top"><span>'+t.id+'</span><span>'+TYPE_ICON[t.type]+bonus+'</span></div>'+
-        '<div class="nm">'+esc(t.name)+'</div><div class="tokens">'+here+'</div></div>';
+        '<div class="dz">'+deco+'</div>'+
+        '<div class="nm">'+esc(t.name)+'</div></div>';
     }).join('');
+    var trees = [1,2,3,4].map(function(n){ return '<svg class="deco c'+n+'" viewBox="0 0 40 40" aria-hidden="true"><use href="#d-tree"/></svg>'; }).join('');
 
     var feedHtml = G.feed.length ?
       '<div class="panel" style="margin-top:12px"><h2>動態紀錄</h2><ul class="feed">'+G.feed.map(function(f){
@@ -1391,12 +1657,18 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
       '<div class="players">'+playersHtml+'</div>'+
       seasonHtml+
       '<div class="inds">'+indHtml+'</div>'+
-      '<div class="board">'+tilesHtml+
-        '<div class="center"><div class="who">'+tokenHtml(G.turn)+esc(p.name)+'</div>'+
-        '<div class="dice"'+(G.dice ? animAttr('dice|'+G.round+'|'+G.turn+'|'+G.dice, 350, 0, '--rot:'+(((G.dice*47+G.turn*13) % 61) - 30)+'deg') : '')+'>'+DICE[G.dice||0]+'</div>'+action+'</div></div>'+
+      '<div class="stage"><div class="board">'+tilesHtml+
+        '<div class="center">'+trees+'<div class="who">'+tokenHtml(G.turn)+esc(p.name)+'</div>'+
+        '<div class="dice"'+(G.dice ? animAttr('dice|'+G.round+'|'+G.turn+'|'+G.dice, 350, 0, '--rot:'+(((G.dice*47+G.turn*13) % 61) - 30)+'deg') : '')+'>'+DICE[G.dice||0]+'</div>'+action+'</div></div></div>'+
+      '<div class="row" style="margin:-6px 0 10px"><span class="hint" style="min-height:0">視角</span>'+
+        '<span class="seg"><button data-view="3d" class="'+(VIEW_FLAT?'':'on')+'">立體</button><button data-view="flat" class="'+(VIEW_FLAT?'on':'')+'">平面</button></span></div>'+
       feedHtml+
       '<p class="foot">小海豚走到🚩就是過關線（'+C.winSatisfaction+'）；其他三項的黑色小線是 '+C.minOtherIndicator+'，要超過它。</p>';
 
+    app.querySelectorAll('[data-view]').forEach(function(b){
+      b.onclick = function(){ setView(b.dataset.view === 'flat'); };
+    });
+    syncPieces(app.querySelector('.board'));
     var rb = document.getElementById('rollBtn');
     if(rb) rb.onclick = function(){
       if(isGuest()){ CityNet.sendAction(NET.code, NET.me, 'roll'); rb.disabled = true; return; }   // 朋友：請房主幫忙擲
@@ -1406,6 +1678,7 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
 
   /* ---------- 畫面：結算 ---------- */
   function renderResult(){
+    detachPieces();
     var R = G.result;
     var indHtml = IND.map(function(i){
       return '<div class="ind"><span>'+i.icon+' '+i.name+'</span>'+
