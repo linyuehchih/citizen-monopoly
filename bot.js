@@ -3,7 +3,7 @@
 // 用法：CityBot.choose(opts, st, level) → { index, reason }
 //   opts  ：目前這張卡可選的選項（已含「先擱置」的備案）
 //   st    ：{ ind:{s,t,e,c}, budget, round, rounds, n（玩家人數）, dec（每回合每項指標下滑多少）,
-//            income（每回合稅收）, cfg（game-data 的 config）}
+//            decVec（這回合各項指標各掉多少，可省略）, income（每回合稅收）, cfg（game-data 的 config）}
 //   level ：'easy' 輕鬆 | 'normal' 普通 | 'random' 純隨機（只給模擬比較用）
 (function(root){
   var KEYS = ['s','t','e','c'];
@@ -16,7 +16,8 @@
   // 這樣電腦會提早補強，不會等到快崩盤才想到。
   function weight(k, st){
     var v = st.ind[k];
-    var dec = st.dec || 0;
+    // 優先用「這回合各項指標實際會掉多少」（時節會讓每項掉的量不一樣），沒有就用基本下滑量
+    var dec = (st.decVec && st.decVec[k] != null) ? st.decVec[k] : (st.dec || 0);
     var target = k==='s' ? st.cfg.winSatisfaction : st.cfg.minOtherIndicator + 1;
     var safe = target + dec * (k==='s' ? 1 : 2);
     var w = (k==='s' ? 1.4 : 1.0) + Math.max(0, safe - v) / 10;

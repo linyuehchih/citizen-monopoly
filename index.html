@@ -26,6 +26,31 @@ h2{font-size:18px;margin:0 0 8px}
 .sub{color:var(--muted);margin:0 0 16px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
 .panel.hl{border-left:4px solid var(--accent)}
+.season{background:var(--panel);border:1px solid var(--line);border-left:4px solid #8b5cf6;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:13px;line-height:1.45}
+.season span{display:block;color:var(--muted)}
+
+/* 小海豚（市民滿意度） */
+.dtrack{position:relative;height:36px;margin:0 20px}
+.dline{position:absolute;left:0;right:0;bottom:4px;height:8px;border-radius:6px;background:var(--line)}
+.dline i{display:block;height:100%;border-radius:6px;background:var(--s);transition:width .4s}
+.dline u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--text);opacity:.55}
+.dline em{position:absolute;top:-24px;transform:translateX(-25%);font-size:13px;font-style:normal}
+.dolphin{position:absolute;bottom:6px;width:40px;height:26px;transform:translateX(-50%);transition:left .5s}
+.dolphin svg{width:100%;height:100%;display:block}
+.dtrack.jump .dolphin{animation:hop .7s ease-in-out 4}
+@keyframes hop{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-12px)}}
+.bigDolphin{width:96px;height:60px;margin:0 auto 4px}
+.bigDolphin svg{width:100%;height:100%}
+.stars{font-size:28px;letter-spacing:4px}
+
+/* 動態紀錄、圖鑑 */
+.feed{list-style:none;padding:0;margin:0}
+.feed li{padding:7px 0;border-top:1px solid var(--line);font-size:13px;line-height:1.55}
+.feed li:first-child{border-top:0;padding-top:0}
+.pickTag{margin-top:6px;font-weight:700;color:var(--accent);font-size:14px}
+.book{list-style:none;padding:0;margin:0;font-size:14px}
+.book li{padding:3px 0}
+.book li.locked{color:var(--muted)}
 .btn{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:11px 18px;font-weight:700;font-size:16px}
 .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
 .btn:disabled{opacity:.5;cursor:default}
@@ -95,8 +120,8 @@ h2{font-size:18px;margin:0 0 8px}
 </head>
 <body>
 <div id="app" class="wrap"></div>
-<script src="data/game-data.js?v=0d99b3bb"></script>
-<script src="bot.js?v=5dcdcd2e"></script>
+<script src="data/game-data.js?v=e03ba9bc"></script>
+<script src="bot.js?v=8139f834"></script>
 <script src="stats-config.js?v=359a6d75"></script>
 <script src="stats.js?v=f78d2499"></script>
 <script>
@@ -132,13 +157,117 @@ h2{font-size:18px;margin:0 0 8px}
   };
 
   var G = null;               // 一局遊戲的狀態
-  var SETUP = {n:2, seats:['human','bot','bot','bot'], level:'normal'};
+  var SETUP = {n:2, seats:['human','bot','bot','bot'], level:'normal', botWait:true};
 
   function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
   function rnd(n){ return Math.floor(Math.random()*n); }
   function pick(a){ return a[rnd(a.length)]; }
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  /* ---------- 小海豚：代表市民滿意度（位置＝滿意度，表情跟著變）---------- */
+  function moodOf(v){ return v < 25 ? 1 : v < 45 ? 2 : v < 60 ? 3 : v < 75 ? 4 : 5; }
+  function dolphinSvg(mood){
+    var ink = '#1f2933', eye, brow = '', mouth, extra = '';
+    var circleEye = '<circle cx="44" cy="20" r="2.2" fill="'+ink+'"/>';
+    var line = function(d){ return '<path d="'+d+'" fill="none" stroke="'+ink+'" stroke-width="1.7" stroke-linecap="round"/>'; };
+    if(mood === 1){        // 哭
+      eye = line('M41 20 Q44 23 47 20'); mouth = line('M47 29 Q51 25.5 55 29');
+      extra = '<path d="M44 23.5 Q42.3 27 44 28.5 Q45.7 27 44 23.5Z" fill="#7ec8f5"/>';
+    } else if(mood === 2){ // 擔心
+      eye = circleEye; brow = line('M39.5 14.5 L47 16.5'); mouth = line('M47 28.5 Q51 26 55 28.5');
+    } else if(mood === 3){ // 普通
+      eye = circleEye; mouth = line('M47 27.5 L55 27.5');
+    } else if(mood === 4){ // 微笑
+      eye = circleEye; mouth = line('M47 26 Q51 30.5 55 26');
+    } else {               // 超開心
+      eye = line('M41.5 21 Q44 16.5 46.5 21');
+      mouth = '<path d="M46.5 26 Q51 33.5 56 26 Z" fill="#ffffff" stroke="'+ink+'" stroke-width="1.4" stroke-linejoin="round"/>';
+      extra = '<circle cx="40" cy="25" r="2.6" fill="#ff9db5" opacity=".85"/>'+
+              '<path d="M56 4 l1.3 3.2 3.2 1.3 -3.2 1.3 -1.3 3.2 -1.3 -3.2 -3.2 -1.3 3.2 -1.3z" fill="#ffd54a"/>';
+    }
+    return '<svg viewBox="0 0 64 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'+
+      '<path d="M12 22 L3 11 Q5 22 3 33 Z" fill="#3b8fd0"/>'+                    // 尾鰭
+      '<ellipse cx="30" cy="22" rx="23" ry="12.5" fill="#4aa3df"/>'+               // 身體
+      '<ellipse cx="52" cy="25" rx="8" ry="4" fill="#4aa3df"/>'+                    // 吻部
+      '<path d="M14 26 Q30 38 50 28 Q40 32 14 26Z" fill="#e8f4fc"/>'+             // 肚皮
+      '<path d="M26 11 Q33 -2 41 12 Z" fill="#3b8fd0"/>'+                           // 背鰭
+      '<path d="M25 29 Q21 37 30 35 Z" fill="#3b8fd0"/>'+                           // 胸鰭
+      extra + eye + brow + mouth + '</svg>';
+  }
+  // 滿意度軌道：小海豚站在對應的位置，旗子是過關線
+  function dolphinTrack(v, jump){
+    var thr = C.winSatisfaction;
+    return '<div class="dtrack'+(jump?' jump':'')+'">'+
+      '<div class="dline"><i style="width:'+v+'%"></i><u style="left:'+thr+'%"></u><em style="left:'+thr+'%">🚩</em></div>'+
+      '<div class="dolphin" style="left:'+v+'%">'+dolphinSvg(moodOf(v))+'</div></div>';
+  }
+
+  /* ---------- 圖鑑與最佳成績：只存在這個瀏覽器裡，不上傳 ---------- */
+  var STORE_KEY = 'cityGameProgress';
+  function loadProgress(){
+    var p = null;
+    try{ p = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); }catch(e){ p = null; }
+    if(!p || typeof p !== 'object') p = {};
+    p.plays = p.plays || 0; p.wins = p.wins || 0; p.bestStars = p.bestStars || 0;
+    p.seen = p.seen || {}; p.seasonsSeen = p.seasonsSeen || {};
+    return p;
+  }
+  function saveProgress(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(PROG)); }catch(e){} }
+  var PROG = loadProgress();
+  function markSeen(group, id){
+    if(PROG[group][id]) return;
+    PROG[group][id] = 1; saveProgress();
+    if(G){ (group === 'seen' ? G.newCards : G.newSeasons).push(id); }
+  }
+  function seenCount(group, list){
+    return list.filter(function(x){ return PROG[group][x.id]; }).length;
+  }
+
+  /* ---------- 動態紀錄：最近發生的事，留在棋盤下方 ---------- */
+  function addFeed(pi, html){
+    G.feed.unshift({pi: pi, html: html});
+    if(G.feed.length > 8) G.feed.length = 8;
+  }
+  function piOf(p){ return G.players.indexOf(p); }
+
+  /* ---------- 星等與稱號（門檻用電腦模擬校準過：過關約 58% 拿 2 顆以上、約 20% 拿 3 顆）---------- */
+  var STAR2 = {s:75, o:25}, STAR3 = {s:80, o:30};
+  function rate(win){
+    var v = G.ind, minO = Math.min(v.t, v.e, v.c), stars = 0;
+    if(win){
+      stars = 1;
+      if(v.s >= STAR2.s && minO >= STAR2.o) stars = 2;
+      if(v.s >= STAR3.s && minO >= STAR3.o) stars = 3;
+    }
+    return stars;
+  }
+  function titleFor(win){
+    if(!win) return {name:'見習市長', text:'城市這次沒撐住，但你已經看到市政有多不容易。換個策略再來一次吧！'};
+    var v = G.ind, all = [v.s, v.t, v.e, v.c];
+    if(Math.max.apply(null, all) - Math.min.apply(null, all) <= 12){
+      return {name:'平衡大師', text:'四項指標都顧到了，沒有哪一塊被犧牲。'};
+    }
+    var top = 't';
+    ['e','c'].forEach(function(k){ if(v[k] > v[top]) top = k; });
+    if(v[top] >= 55){
+      return {
+        t:{name:'交通疏導員', text:'你把城市的路理順了。'},
+        e:{name:'環境守護者', text:'你讓花蓮市更乾淨、更宜居。'},
+        c:{name:'溫暖照顧者', text:'你把照顧與安全放在前面。'}
+      }[top];
+    }
+    return {name:'市民的好鄰居', text:'你讓市民感覺被聽見，滿意度走得很穩。'};
+  }
+  function nextStarHint(stars){
+    if(stars >= 3) return '你已經拿到最高的 3 顆星，試試看不同的人數或電腦風格吧！';
+    if(stars === 2) return '想拿 3 顆星：🙂市民滿意度 '+STAR3.s+' 以上，而且其他三項都要 '+STAR3.o+' 以上。';
+    if(stars === 1) return '想拿 2 顆星：🙂市民滿意度 '+STAR2.s+' 以上，而且其他三項都要 '+STAR2.o+' 以上。';
+    return '先撐過 '+C.rounds+' 回合、讓🙂市民滿意度達 '+C.winSatisfaction+'，就能拿到第 1 顆星。';
+  }
+  function starsHtml(n){
+    return '<span class="stars">'+[1,2,3].map(function(i){ return i <= n ? '⭐' : '☆'; }).join('')+'</span>';
+  }
 
   function fxChips(fx){
     return IND.filter(function(i){ return fx[i.k]; }).map(function(i){
@@ -176,7 +305,17 @@ h2{font-size:18px;margin:0 0 8px}
         '<button data-lv="normal" class="'+(SETUP.level==='normal'?'on':'')+'">🟡 普通</button></div>'+
       '<p class="hint" style="margin:8px 0 0">'+(SETUP.level==='easy' ?
         '輕鬆：電腦會去救最弱的指標，但不太會算預算，偶爾也會失誤。' :
-        '普通：電腦會算預算，優先救最弱的指標，但不一定每次都選最好的。')+'</p></div>' : '';
+        '普通：電腦會算預算，優先救最弱的指標，但不一定每次都選最好的。')+'</p>'+
+      '<div style="margin-top:12px"><b>電腦選完之後</b></div>'+
+      '<div class="seg row" id="waitSeg" style="margin-top:6px">'+
+        '<button data-w="1" class="'+(SETUP.botWait?'on':'')+'">我按「繼續」才跳走</button>'+
+        '<button data-w="0" class="'+(!SETUP.botWait?'on':'')+'">自動繼續</button></div></div>' : '';
+    var nSeen = seenCount('seen', D.events), nSeasons = seenCount('seasonsSeen', D.seasons);
+    var collectionHtml = '<div class="panel"><div class="row" style="justify-content:space-between">'+
+      '<div><h2 style="margin:0">📚 市政圖鑑</h2>'+
+      '<div class="hint">事件卡 '+nSeen+'／'+D.events.length+'・時節 '+nSeasons+'／'+D.seasons.length+
+      (PROG.plays ? '・玩過 '+PROG.plays+' 局・最佳 '+starsHtml(PROG.bestStars) : '・玩過就會解鎖')+'</div></div>'+
+      '<button class="btn ghost" id="bookBtn">看圖鑑</button></div></div>';
     app.innerHTML =
       '<h1>🏙️ 市民大富翁</h1>'+
       '<p class="sub">花蓮市的合作式公民教育遊戲：大家同一隊，一起把城市經營好。</p>'+
@@ -193,6 +332,7 @@ h2{font-size:18px;margin:0 0 8px}
       (hasHuman ? '' : '<p class="lose">至少要有 1 位真人玩家。</p>')+
       '</div>'+
       levelHtml+
+      collectionHtml+
       (window.CityStats && window.CityStats.enabled() && hasHuman ?
         '<p class="hint">📊 為了讓大家看到彼此的想法，遊戲會匿名記錄真人玩家的選擇：只記「哪張卡、選了哪個」，不記姓名、帳號或手機。這是玩家選擇統計，不是民意調查。</p>' : '')+
       '<button class="btn" id="startBtn"'+(hasHuman?'':' disabled')+'>開始遊戲</button>'+
@@ -207,7 +347,33 @@ h2{font-size:18px;margin:0 0 8px}
     app.querySelectorAll('#lvSeg button').forEach(function(b){
       b.onclick = function(){ SETUP.level = b.dataset.lv; renderSetup(); };
     });
+    app.querySelectorAll('#waitSeg button').forEach(function(b){
+      b.onclick = function(){ SETUP.botWait = b.dataset.w === '1'; renderSetup(); };
+    });
+    document.getElementById('bookBtn').onclick = showBook;
     document.getElementById('startBtn').onclick = startGame;
+  }
+
+  // 圖鑑：看過的卡顯示名稱，沒看過的只給一點提示（會在哪個地點遇到）
+  function showBook(){
+    var tileName = {};
+    D.tiles.forEach(function(t){ tileName[t.id] = t.name; });
+    var cardRows = D.events.map(function(e){
+      if(PROG.seen[e.id]){
+        return '<li>✅ '+esc(e.title)+' <span class="tag '+(e.kind==='hualien'?'hl':'')+'">'+(e.kind==='hualien'?'花蓮在地':'市政情境')+'</span></li>';
+      }
+      return '<li class="locked">❔ ？？？ <span class="hint">可能在「'+esc(tileName[e.tiles[0]] || '')+'」遇到</span></li>';
+    }).join('');
+    var seasonRows = D.seasons.map(function(s){
+      return PROG.seasonsSeen[s.id] ? '<li>✅ '+s.icon+' '+esc(s.name)+'</li>' : '<li class="locked">❔ ？？？</li>';
+    }).join('');
+    var html = '<h2>📚 市政圖鑑</h2>'+
+      '<p class="hint">玩的時候遇到的事件卡和時節會被收進來，資料只存在這個瀏覽器裡。</p>'+
+      '<h3 style="margin:12px 0 4px">事件卡 '+seenCount('seen', D.events)+'／'+D.events.length+'</h3><ul class="book">'+cardRows+'</ul>'+
+      '<h3 style="margin:12px 0 4px">時節 '+seenCount('seasonsSeen', D.seasons)+'／'+D.seasons.length+'</h3><ul class="book">'+seasonRows+'</ul>'+
+      '<button class="btn" id="bookClose" style="margin-top:12px">關閉</button>';
+    var ov = modal(html);
+    ov.querySelector('#bookClose').onclick = closeModal;
   }
 
   /* ---------- 開局 ---------- */
@@ -222,8 +388,11 @@ h2{font-size:18px;margin:0 0 8px}
       players: players, turn:0, round:1, budget:C.startBudget,
       ind:{s:C.startIndicator, t:C.startIndicator, e:C.startIndicator, c:C.startIndicator},
       usedEvents:{}, usedChances:{}, log:[], dice:0, phase:'idle', msg:'',
-      delta:{}, deltaBudget:0, over:false, result:null, rollResolve:null, level:SETUP.level
+      delta:{}, deltaBudget:0, over:false, result:null, rollResolve:null, level:SETUP.level,
+      seasonDeck:[], season:null,
+      botWait:SETUP.botWait, lastReason:'', feed:[], mile:{}, jumpUntil:0, newCards:[], newSeasons:[]
     };
+    nextSeason();                                    // 第 1 回合的時節
     if(window.CityStats) window.CityStats.load();   // 先把大家的選擇比例抓回來
     gameLoop();
   }
@@ -275,11 +444,13 @@ h2{font-size:18px;margin:0 0 8px}
       applyEffects(fx, 0);
       render();
       if(checkLose()) return;
+      addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：📍 運作順利 <span class="chips" style="display:inline-flex">'+fxChips(fx)+'</span>');
       return info(p, '📍 '+tile.name, tile.name+'運作順利，'+ic.name+'提升了。', fxChips(fx));
     }
     if(tile.type==='rest'){
       applyEffects({}, C.restBudget);
       render();
+      addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：☕ 休息一下 <span class="chips" style="display:inline-flex">'+costChip(-C.restBudget)+'</span>');
       return info(p, '☕ '+tile.name, '稍微休息一下，整理好預算。', costChip(-C.restBudget));
     }
   }
@@ -299,25 +470,51 @@ h2{font-size:18px;margin:0 0 8px}
   }
 
   // 電腦玩家的選擇邏輯在 bot.js，這裡只負責把目前的城市狀態交給它
-  function incomeNow(){ return C.incomePerPlayerPerRound * G.players.length; }
+  function incomeNow(){
+    var n = G.players.length;
+    return C.incomeByPlayers && C.incomeByPlayers[n] != null ? C.incomeByPlayers[n] : C.incomePerPlayerPerRound * n;
+  }
   function decayNow(){
     var n = G.players.length;
     return C.decayByPlayers && C.decayByPlayers[n] != null ? C.decayByPlayers[n] : Math.round(C.decayPerPlayerPerRound * n);
   }
+  // 時節：每回合抽一張，決定「這回合結束時」各項指標各掉多少（基本下滑量 × 該時節的倍率）。
+  // 8 張時節的平均倍率都是 1，所以整體難度不變，只是每回合掉的重點不一樣。
+  function shuffle(a){
+    for(var i=a.length-1;i>0;i--){ var j = rnd(i+1), t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  function nextSeason(){
+    if(!D.seasons || !D.seasons.length){ G.season = null; return; }
+    if(!G.seasonDeck.length) G.seasonDeck = shuffle(D.seasons.slice());
+    G.season = G.seasonDeck.pop();
+    markSeen('seasonsSeen', G.season.id);
+  }
+  function decayVec(){
+    var base = decayNow(), v = {};
+    IND.forEach(function(i){
+      var m = G.season && G.season.mult[i.k] != null ? G.season.mult[i.k] : 1;
+      v[i.k] = Math.max(0, Math.round(base * m));
+    });
+    return v;
+  }
   function botChoose(opts){
     return window.CityBot.choose(opts, {
       ind: G.ind, budget: G.budget, round: G.round, rounds: C.rounds,
-      n: G.players.length, dec: decayNow(), income: incomeNow(), cfg: C
+      n: G.players.length, dec: decayNow(), decVec: decayVec(), income: incomeNow(), cfg: C
     }, G.level);
   }
 
   async function playEvent(p, tile){
     var card = draw(D.events, G.usedEvents, tile.id);
+    markSeen('seen', card.id);
     var opts = card.options.slice();
     if(!opts.some(function(o){ return o.cost <= G.budget; })) opts.push(FALLBACK);
     var idx = await chooseOption(card, opts, p, tile);
     var o = opts[idx];
     applyEffects(o.fx, -o.cost);
+    addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：'+esc(card.title)+'<br>選了「'+esc(o.label)+'」 '+
+      '<span class="chips" style="display:inline-flex">'+costChip(o.cost)+fxChips(o.fx)+'</span>');
     G.log.push({round:G.round, who:p.name, bot:p.bot, tile:tile.name, title:card.title, choice:o.label, cost:o.cost,
                 cardId:card.id, idx:idx, real: idx < card.options.length});
     if(!p.bot && idx < card.options.length && window.CityGame && typeof window.CityGame.onChoice==='function'){
@@ -355,15 +552,20 @@ h2{font-size:18px;margin:0 0 8px}
             (o.cost > G.budget ? '<div class="hint">預算不夠</div>' : '')+'</button>';
         }).join('');
       var ov = modal(html);
+      G.lastReason = '';
       if(p.bot){
         var choice = botChoose(opts), i = choice.index;
-        // 讓真人看得懂電腦做了什麼：停一下，標出電腦的選擇和理由
-        sleep(1200).then(function(){
+        G.lastReason = choice.reason || '';
+        // 讓真人看得懂電腦做了什麼：先看完所有選項，再標出電腦的選擇和理由
+        sleep(1500).then(function(){
           var b = ov.querySelector('[data-i="'+i+'"]');
-          if(b){ b.classList.add('pick'); }
+          if(b){
+            b.classList.add('pick');
+            b.insertAdjacentHTML('beforeend', '<div class="pickTag">✅ '+esc(p.name)+' 選了這個</div>');
+          }
           var note = ov.querySelector('#botNote');
           if(note && choice.reason){ note.textContent = '💭 '+p.name+'：'+choice.reason; }
-          sleep(1600).then(function(){ resolve(i); });
+          sleep(2200).then(function(){ resolve(i); });
         });
       } else {
         ov.querySelectorAll('.opt').forEach(function(b){
@@ -375,14 +577,19 @@ h2{font-size:18px;margin:0 0 8px}
 
   async function showResult(card, o, p, idx){
     var html = '<h2>'+esc(card.title)+'</h2>'+
-      '<div class="res"><b>'+esc(p.name)+'選了：'+esc(o.label)+'</b><div style="margin-top:6px">'+esc(o.result)+'</div>'+
+      '<div class="res"><b>'+esc(p.name)+'選了：'+esc(o.label)+'</b>'+
+      (p.bot && G.lastReason ? '<div class="hint" style="margin-top:4px;color:var(--accent)">💭 '+esc(G.lastReason)+'</div>' : '')+
+      '<div style="margin-top:6px">'+esc(o.result)+'</div>'+
       '<div class="chips" style="margin-top:8px">'+costChip(o.cost)+fxChips(o.fx)+'</div></div>'+
       shareLine(card, idx, p)+
       '<button class="btn" id="goOn">繼續</button>';
     var ov = modal(html);
-    await waitClick(ov, '#goOn', p.bot ? 2200 : 0);
+    await waitClick(ov, '#goOn', botAuto(p, 4000));
     closeModal();
   }
+
+  // 電腦玩家的結果視窗：預設要真人按「繼續」才跳走；選了「自動繼續」就等幾秒
+  function botAuto(p, ms){ return p.bot && !G.botWait ? ms : 0; }
 
   /* ---------- 機會卡／一般提示 ---------- */
   async function playChance(p, tile){
@@ -392,6 +599,7 @@ h2{font-size:18px;margin:0 0 8px}
     applyEffects(fx, budget);
     render();
     var chips = (budget ? costChip(-budget) : '') + fxChips(fx);
+    addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：🎁 '+esc(card.title)+' <span class="chips" style="display:inline-flex">'+chips+'</span>');
     await info(p, '🎁 '+card.title, card.text, chips);
   }
 
@@ -399,7 +607,7 @@ h2{font-size:18px;margin:0 0 8px}
     var html = '<h2>'+title+'</h2><p class="scene">'+esc(text)+'</p>'+
       '<div class="chips" style="margin-bottom:12px">'+chips+'</div><button class="btn" id="goOn">繼續</button>';
     var ov = modal(html);
-    await waitClick(ov, '#goOn', p.bot ? 1800 : 0);
+    await waitClick(ov, '#goOn', botAuto(p, 2500));
     closeModal();
     checkLose();
   }
@@ -408,7 +616,7 @@ h2{font-size:18px;margin:0 0 8px}
   var clearTimer = null;
   function applyEffects(fx, budgetDelta){
     G.budget = Math.max(0, G.budget + budgetDelta);
-    var d = {};
+    var d = {}, prevS = G.ind.s;
     IND.forEach(function(i){
       if(fx[i.k]){
         var before = G.ind[i.k];
@@ -416,6 +624,16 @@ h2{font-size:18px;margin:0 0 8px}
         d[i.k] = G.ind[i.k] - before;
       }
     });
+    // 小海豚的里程碑：滿意度第一次升過 60、過關線、85 時，小海豚會開心跳幾下
+    if(G.ind.s > prevS){
+      [60, C.winSatisfaction, 85].forEach(function(m){
+        if(prevS < m && G.ind.s >= m && !G.mile[m]){
+          G.mile[m] = true;
+          G.jumpUntil = Date.now() + 3000;
+          addFeed(null, '🐬 小海豚好開心：市民滿意度突破 '+m+'！');
+        }
+      });
+    }
     G.delta = d; G.deltaBudget = budgetDelta;
     clearTimeout(clearTimer);
     clearTimer = setTimeout(function(){ if(G){ G.delta = {}; G.deltaBudget = 0; render(); } }, 3000);
@@ -429,20 +647,26 @@ h2{font-size:18px;margin:0 0 8px}
   }
 
   async function endRound(){
-    var inc = incomeNow(), dec = decayNow();
-    applyEffects({s:-dec, t:-dec, e:-dec, c:-dec}, inc);
+    var inc = incomeNow(), dv = decayVec();
+    var fx = {s:-dv.s, t:-dv.t, e:-dv.e, c:-dv.c};
+    var season = G.season;
+    applyEffects(fx, inc);
+    addFeed(null, '⏳ 第 '+G.round+' 回合結束'+(season ? '（'+season.icon+esc(season.name)+'）' : '')+
+      ' <span class="chips" style="display:inline-flex">'+costChip(-inc)+fxChips(fx)+'</span>');
     G.phase = 'idle'; G.msg = '第 '+G.round+' 回合結束'; render();
     if(checkLose()) return;
     var last = G.round >= C.rounds;
     var html = '<h2>第 '+G.round+' 回合結束</h2>'+
-      '<div class="res">稅收進帳 💰+'+inc+'。城市會老化，人也會抱怨，每項指標 −'+dec+'。</div>'+
-      '<div class="chips" style="margin-bottom:12px">'+costChip(-inc)+fxChips({s:-dec,t:-dec,e:-dec,c:-dec})+'</div>'+
+      (season ? '<div style="margin-bottom:8px">'+season.icon+' 這回合的時節：<b>'+esc(season.name)+'</b></div>' : '')+
+      '<div class="res">稅收進帳 💰+'+inc+'。'+esc(season ? season.text : '城市會老化，人也會抱怨。')+'</div>'+
+      '<div class="chips" style="margin-bottom:12px">'+costChip(-inc)+fxChips(fx)+'</div>'+
       '<button class="btn" id="goOn">'+(last ? '看結果' : '下一回合')+'</button>';
     var ov = modal(html);
     await waitClick(ov, '#goOn', 0);
     closeModal();
     if(last){ evaluate(); return; }
     G.round++;
+    nextSeason();                                    // 抽下一回合的時節
   }
 
   function evaluate(){
@@ -463,9 +687,16 @@ h2{font-size:18px;margin:0 0 8px}
   }
 
   function finish(win, reason, failKey){
+    if(G.over) return;
     G.over = true;
     var w = failKey ? IND.filter(function(i){ return i.k===failKey; })[0] : weakest();
-    G.result = {win:win, reason:reason, weak:w};
+    var stars = rate(win);
+    G.result = {win:win, reason:reason, weak:w, stars:stars, title:titleFor(win)};
+    // 記錄這局的成績（只存在這個瀏覽器）
+    G.prevBest = PROG.bestStars;
+    PROG.plays++; if(win) PROG.wins++;
+    if(stars > PROG.bestStars) PROG.bestStars = stars;
+    saveProgress();
     closeModal();
     render();
     // 結算時再抓一次最新的比例，抓到了就重畫結算畫面
@@ -514,10 +745,18 @@ h2{font-size:18px;margin:0 0 8px}
       var v = G.ind[i.k], thr = i.k==='s' ? C.winSatisfaction : C.minOtherIndicator;
       var d = G.delta[i.k];
       return '<div class="ind"><span>'+i.icon+' '+i.name+'</span>'+
-        '<div class="bar"><i style="width:'+v+'%;background:var(--'+i.k+')"></i><u style="left:'+thr+'%"></u></div>'+
+        (i.k==='s' ? dolphinTrack(v, Date.now() < G.jumpUntil)
+                   : '<div class="bar"><i style="width:'+v+'%;background:var(--'+i.k+')"></i><u style="left:'+thr+'%"></u></div>')+
         '<b>'+v+(d ? '<span class="delta '+(d>0?'pos':'neg')+'">'+(d>0?'+':'')+d+'</span>' : '')+'</b></div>';
     }).join('');
 
+    var seasonHtml = '';
+    if(G.season){
+      var dv = decayVec();
+      seasonHtml = '<div class="season"><b>'+G.season.icon+' 本回合時節：'+esc(G.season.name)+'</b>'+
+        '<span>'+esc(G.season.text)+'</span>'+
+        '<span>回合結束時：'+IND.map(function(i){ return i.icon+'−'+dv[i.k]; }).join('　')+'</span></div>';
+    }
     var tilesHtml = D.tiles.map(function(t){
       var pos = tilePos(t.id);
       var here = G.players.map(function(pl,i){ return pl.pos===t.id-1 ? tokenHtml(i) : ''; }).join('');
@@ -527,6 +766,11 @@ h2{font-size:18px;margin:0 0 8px}
         '<div class="top"><span>'+t.id+'</span><span>'+TYPE_ICON[t.type]+bonus+'</span></div>'+
         '<div class="nm">'+esc(t.name)+'</div><div class="tokens">'+here+'</div></div>';
     }).join('');
+
+    var feedHtml = G.feed.length ?
+      '<div class="panel" style="margin-top:12px"><h2>動態紀錄</h2><ul class="feed">'+G.feed.map(function(f){
+        return '<li>'+(f.pi != null ? tokenHtml(f.pi)+' ' : '')+f.html+'</li>';
+      }).join('')+'</ul></div>' : '';
 
     var action;
     if(G.phase==='roll' && !p.bot){
@@ -539,11 +783,13 @@ h2{font-size:18px;margin:0 0 8px}
       '<div class="hud"><span>第 '+G.round+' / '+C.rounds+' 回合</span>'+
       '<span class="budget">💰 預算 '+G.budget+(G.deltaBudget ? '<span class="delta '+(G.deltaBudget>0?'pos':'neg')+'">'+(G.deltaBudget>0?'+':'')+G.deltaBudget+'</span>' : '')+'</span></div>'+
       '<div class="players">'+playersHtml+'</div>'+
+      seasonHtml+
       '<div class="inds">'+indHtml+'</div>'+
       '<div class="board">'+tilesHtml+
         '<div class="center"><div class="who">'+tokenHtml(G.turn)+esc(p.name)+'</div>'+
         '<div class="dice">'+DICE[G.dice||0]+'</div>'+action+'</div></div>'+
-      '<p class="foot">棋盤上的黑色小線是過關門檻：🙂要在 '+C.winSatisfaction+' 以上，其他三項要超過 '+C.minOtherIndicator+'。</p>';
+      feedHtml+
+      '<p class="foot">小海豚走到🚩就是過關線（'+C.winSatisfaction+'）；其他三項的黑色小線是 '+C.minOtherIndicator+'，要超過它。</p>';
 
     var rb = document.getElementById('rollBtn');
     if(rb) rb.onclick = function(){ if(G.rollResolve){ var r = G.rollResolve; G.rollResolve = null; r(); } };
@@ -554,8 +800,23 @@ h2{font-size:18px;margin:0 0 8px}
     var R = G.result;
     var indHtml = IND.map(function(i){
       return '<div class="ind"><span>'+i.icon+' '+i.name+'</span>'+
-        '<div class="bar"><i style="width:'+G.ind[i.k]+'%;background:var(--'+i.k+')"></i></div><b>'+G.ind[i.k]+'</b></div>';
+        (i.k==='s' ? dolphinTrack(G.ind.s, false)
+                   : '<div class="bar"><i style="width:'+G.ind[i.k]+'%;background:var(--'+i.k+')"></i></div>')+
+        '<b>'+G.ind[i.k]+'</b></div>';
     }).join('');
+    var newBest = R.stars > 0 && R.stars > G.prevBest;
+    var ratingHtml = '<div class="panel hl" style="text-align:center">'+
+      '<div class="bigDolphin">'+dolphinSvg(moodOf(G.ind.s))+'</div>'+
+      starsHtml(R.stars)+
+      '<h2 style="margin:6px 0 2px">稱號：'+esc(R.title.name)+'</h2>'+
+      '<p style="margin:0 0 8px">'+esc(R.title.text)+'</p>'+
+      (newBest ? '<p class="win" style="margin:0 0 8px"><b>🏅 這是你的新紀錄！</b></p>' : '')+
+      '<p class="hint" style="margin:0">'+esc(nextStarHint(R.stars))+'</p></div>';
+    var collectHtml = '<div class="panel"><h2>📚 市政圖鑑</h2>'+
+      '<p style="margin:0 0 6px">這局新解鎖 '+G.newCards.length+' 張事件卡、'+G.newSeasons.length+' 個時節。</p>'+
+      '<p class="hint" style="margin:0">累計：事件卡 '+seenCount('seen', D.events)+'／'+D.events.length+'，時節 '+
+      seenCount('seasonsSeen', D.seasons)+'／'+D.seasons.length+'；玩過 '+PROG.plays+' 局，過關 '+PROG.wins+' 次，最佳 '+starsHtml(PROG.bestStars)+
+      '。（只存在這個瀏覽器裡，不會上傳）</p></div>';
     var statsHtml = '';
     if(window.CityStats){
       var mine = G.log.filter(function(l){ return !l.bot && l.real && window.CityStats.share(l.cardId, l.idx); });
@@ -573,8 +834,10 @@ h2{font-size:18px;margin:0 0 8px}
     app.innerHTML =
       '<p class="big '+(R.win?'win':'lose')+'">'+(R.win ? '🎉 全隊獲勝！' : '😢 這次沒撐住')+'</p>'+
       '<p>'+esc(R.reason)+'</p>'+
+      ratingHtml+
       '<div class="panel"><h2>最後的城市</h2><div class="inds">'+indHtml+'</div>'+
         '<div class="hint">💰 剩下預算 '+G.budget+'</div></div>'+
+      collectHtml+
       '<div class="panel"><h2>想一想</h2><p>最弱的是「'+R.weak.icon+R.weak.name+'」。'+REFLECT[R.weak.k]+'</p></div>'+
       statsHtml+
       '<div class="panel"><h2>這局做過的決定</h2>'+logHtml+'</div>'+
