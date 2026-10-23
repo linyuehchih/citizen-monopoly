@@ -106,6 +106,7 @@ h2{font-size:18px;margin:0 0 8px}
 .opt{display:block;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:8px}
 .opt:hover:not(:disabled){border-color:var(--accent)}
 .opt:disabled{opacity:.45;cursor:not-allowed}
+.opt.pick:disabled{opacity:1}
 .opt.pick{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
 .opt .lb{font-weight:700;margin-bottom:4px}
 .chips{display:flex;gap:5px;flex-wrap:wrap}
@@ -116,6 +117,16 @@ h2{font-size:18px;margin:0 0 8px}
 .log{font-size:13px;color:var(--muted);padding-left:18px;margin:6px 0}
 .big{font-size:32px;margin:0}
 .win{color:var(--good)} .lose{color:var(--bad)}
+
+/* 連線：大廳、建議、輸入框 */
+input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;min-width:0;flex:1}
+.sug{margin-top:6px;font-size:13px;color:var(--accent)}
+.roomcode{font-size:40px;font-weight:800;letter-spacing:8px;text-align:center;margin:4px 0 2px}
+.seatrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.seatrow:first-child{border-top:0}
+.seatrow .nm2{flex:1;min-width:0}
+.err{color:var(--bad);font-size:13px;margin-top:6px}
+.badge{display:inline-block;font-size:11px;border-radius:999px;padding:0 8px;background:var(--line);color:var(--muted);margin-left:4px}
 </style>
 </head>
 <body>
@@ -124,6 +135,8 @@ h2{font-size:18px;margin:0 0 8px}
 <script src="bot.js?v=8139f834"></script>
 <script src="stats-config.js?v=359a6d75"></script>
 <script src="stats.js?v=f78d2499"></script>
+<script src="firebase-config.js?v=ed356509"></script>
+<script src="net.js?v=0f377765"></script>
 <script>
 (function(){
   var app = document.getElementById('app');
@@ -157,7 +170,17 @@ h2{font-size:18px;margin:0 0 8px}
   };
 
   var G = null;               // 一局遊戲的狀態
-  var SETUP = {n:2, seats:['human','bot','bot','bot'], level:'normal', botWait:true};
+  var SETUP = {n:2, seats:['human','bot','bot','bot'], level:'normal', botWait:true, nick:''};
+
+  // ===== 連線狀態（NET.on 才是連線模式；單機玩的時候這些都用不到）=====
+  var NET = {on:false, role:null, code:null, me:0, meta:null, seats:{}, pubT:null, last:{}, shownKey:'', claimed:false,
+             counted:false, prevBest:0, err:'', busy:false, remoteWait:null};
+  function isHost(){ return NET.on && NET.role === 'host'; }
+  function isGuest(){ return NET.on && NET.role === 'guest'; }
+  // 這個玩家是不是「這台裝置的人」：單機＝所有真人；連線＝只有自己的座位
+  function isMine(p){ return NET.on ? G.players.indexOf(p) === NET.me : !p.bot; }
+  function cardById(id){ var a = D.events.filter(function(e){ return e.id === id; }); return a[0] || D.chances.filter(function(e){ return e.id === id; })[0]; }
+  function tileById(id){ return D.tiles.filter(function(t){ return t.id === id; })[0]; }
 
   function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
   function rnd(n){ return Math.floor(Math.random()*n); }
@@ -310,6 +333,15 @@ h2{font-size:18px;margin:0 0 8px}
       '<div class="seg row" id="waitSeg" style="margin-top:6px">'+
         '<button data-w="1" class="'+(SETUP.botWait?'on':'')+'">我按「繼續」才跳走</button>'+
         '<button data-w="0" class="'+(!SETUP.botWait?'on':'')+'">自動繼續</button></div></div>' : '';
+    // 連線：開房間（上面選「真人」的位子留給朋友）或輸入代碼加入
+    var netHtml = (window.CityNet && CityNet.available()) ?
+      '<div class="panel"><h2>👥 找朋友一起玩（連線）</h2>'+
+      '<p class="hint" style="margin:0 0 8px">開一個房間，把連結傳給朋友，大家各用自己的手機一起玩。上面選「真人」的位子是留給朋友的，選「電腦」的位子由電腦補上。</p>'+
+      '<div class="row"><input type="text" id="nickSetup" maxlength="8" placeholder="你的暱稱（可留空）" value="'+esc(SETUP.nick)+'">'+
+      '<button class="btn" id="openRoomBtn"'+(NET.busy?' disabled':'')+'>'+(NET.busy ? '連線中…' : '開房間')+'</button></div>'+
+      '<div class="row" style="margin-top:10px"><input type="text" id="joinCode" maxlength="5" placeholder="朋友給你的房間代碼">'+
+      '<button class="btn ghost" id="joinBtn">加入</button></div>'+
+      (NET.err ? '<div class="err">'+esc(NET.err)+'</div>' : '')+'</div>' : '';
     var nSeen = seenCount('seen', D.events), nSeasons = seenCount('seasonsSeen', D.seasons);
     var collectionHtml = '<div class="panel"><div class="row" style="justify-content:space-between">'+
       '<div><h2 style="margin:0">📚 市政圖鑑</h2>'+
@@ -332,6 +364,7 @@ h2{font-size:18px;margin:0 0 8px}
       (hasHuman ? '' : '<p class="lose">至少要有 1 位真人玩家。</p>')+
       '</div>'+
       levelHtml+
+      netHtml+
       collectionHtml+
       (window.CityStats && window.CityStats.enabled() && hasHuman ?
         '<p class="hint">📊 為了讓大家看到彼此的想法，遊戲會匿名記錄真人玩家的選擇：只記「哪張卡、選了哪個」，不記姓名、帳號或手機。這是玩家選擇統計，不是民意調查。</p>' : '')+
@@ -351,6 +384,17 @@ h2{font-size:18px;margin:0 0 8px}
       b.onclick = function(){ SETUP.botWait = b.dataset.w === '1'; renderSetup(); };
     });
     document.getElementById('bookBtn').onclick = showBook;
+    var nickEl = document.getElementById('nickSetup');
+    if(nickEl) nickEl.oninput = function(){ SETUP.nick = nickEl.value; };
+    var openBtn = document.getElementById('openRoomBtn');
+    if(openBtn) openBtn.onclick = function(){ SETUP.nick = nickEl ? nickEl.value : SETUP.nick; openRoom(); };
+    var joinBtn = document.getElementById('joinBtn');
+    if(joinBtn) joinBtn.onclick = function(){
+      var code = (document.getElementById('joinCode').value || '').trim().toUpperCase();
+      if(!code){ NET.err = '請先輸入房間代碼'; renderSetup(); return; }
+      var q = new URLSearchParams(location.search); q.set('room', code);
+      location.href = location.pathname + '?' + q.toString();
+    };
     document.getElementById('startBtn').onclick = startGame;
   }
 
@@ -377,33 +421,40 @@ h2{font-size:18px;margin:0 0 8px}
   }
 
   /* ---------- 開局 ---------- */
-  function startGame(){
-    var botNo = 0;
-    var players = [];
-    for(var i=0;i<SETUP.n;i++){
-      var bot = SETUP.seats[i]==='bot';
-      players.push({name: bot ? '電腦'+String.fromCharCode(65+botNo++) : '玩家'+(i+1), bot:bot, pos:0});
-    }
+  function newGame(players){
     G = {
       players: players, turn:0, round:1, budget:C.startBudget,
       ind:{s:C.startIndicator, t:C.startIndicator, e:C.startIndicator, c:C.startIndicator},
       usedEvents:{}, usedChances:{}, log:[], dice:0, phase:'idle', msg:'',
       delta:{}, deltaBudget:0, over:false, result:null, rollResolve:null, level:SETUP.level,
       seasonDeck:[], season:null,
-      botWait:SETUP.botWait, lastReason:'', feed:[], mile:{}, jumpUntil:0, newCards:[], newSeasons:[]
+      botWait:SETUP.botWait, lastReason:'', feed:[], mile:{}, jumpUntil:0, newCards:[], newSeasons:[],
+      prompt:null, promptRes:null, promptTimer:null
     };
     nextSeason();                                    // 第 1 回合的時節
     if(window.CityStats) window.CityStats.load();   // 先把大家的選擇比例抓回來
-    gameLoop();
+  }
+
+  function startGame(){
+    var botNo = 0;
+    var players = [];
+    for(var i=0;i<SETUP.n;i++){
+      var bot = SETUP.seats[i]==='bot';
+      players.push({name: bot ? '電腦'+String.fromCharCode(65+botNo++) : '玩家'+(i+1), bot:bot, remote:false, pos:0});
+    }
+    newGame(players);
+    gameLoop(0);
   }
 
   /* ---------- 主迴圈 ---------- */
-  async function gameLoop(){
+  async function gameLoop(startTurn){
     render();
+    var first = startTurn || 0;
     while(!G.over){
-      for(G.turn=0; G.turn<G.players.length && !G.over; G.turn++){
+      for(G.turn=first; G.turn<G.players.length && !G.over; G.turn++){
         await playTurn();
       }
+      first = 0;
       if(G.over) break;
       G.turn = 0;
       await endRound();
@@ -413,11 +464,13 @@ h2{font-size:18px;margin:0 0 8px}
   function cur(){ return G.players[G.turn]; }
 
   async function playTurn(){
-    var p = cur();
+    var p = cur(), pi = G.turn;
+    if(isHost()) saveGame();                      // 房主重新整理後，可以從這個回合接回來
     G.phase = 'roll'; G.dice = 0;
-    G.msg = p.bot ? p.name+' 準備擲骰子…' : '輪到你了，擲骰子吧！';
+    G.msg = p.bot ? p.name+' 準備擲骰子…' : (NET.on ? p.name+' 正在擲骰子…' : '輪到你了，擲骰子吧！');
     render();
     if(p.bot){ await sleep(900); }
+    else if(p.remote){ await waitRemote(pi, 'roll'); }   // 朋友按擲骰子；太久沒動作就由電腦代擲
     else { await new Promise(function(r){ G.rollResolve = r; }); }
     G.phase = 'moving';
     for(var k=0;k<8;k++){ G.dice = 1+rnd(6); render(); await sleep(70); }
@@ -445,13 +498,13 @@ h2{font-size:18px;margin:0 0 8px}
       render();
       if(checkLose()) return;
       addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：📍 運作順利 <span class="chips" style="display:inline-flex">'+fxChips(fx)+'</span>');
-      return info(p, '📍 '+tile.name, tile.name+'運作順利，'+ic.name+'提升了。', fxChips(fx));
+      return info(p, '📍 '+tile.name, tile.name+'運作順利，'+ic.name+'提升了。', 0, fx);
     }
     if(tile.type==='rest'){
       applyEffects({}, C.restBudget);
       render();
       addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：☕ 休息一下 <span class="chips" style="display:inline-flex">'+costChip(-C.restBudget)+'</span>');
-      return info(p, '☕ '+tile.name, '稍微休息一下，整理好預算。', costChip(-C.restBudget));
+      return info(p, '☕ '+tile.name, '稍微休息一下，整理好預算。', C.restBudget, {});
     }
   }
 
@@ -510,24 +563,27 @@ h2{font-size:18px;margin:0 0 8px}
     markSeen('seen', card.id);
     var opts = card.options.slice();
     if(!opts.some(function(o){ return o.cost <= G.budget; })) opts.push(FALLBACK);
-    var idx = await chooseOption(card, opts, p, tile);
+    var pi = piOf(p);
+    var idx = await chooseOption(card, opts, p, tile, pi);
     var o = opts[idx];
     applyEffects(o.fx, -o.cost);
     addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：'+esc(card.title)+'<br>選了「'+esc(o.label)+'」 '+
       '<span class="chips" style="display:inline-flex">'+costChip(o.cost)+fxChips(o.fx)+'</span>');
-    G.log.push({round:G.round, who:p.name, bot:p.bot, tile:tile.name, title:card.title, choice:o.label, cost:o.cost,
+    G.log.push({round:G.round, who:p.name, bot:p.bot, seat:pi, tile:tile.name, title:card.title, choice:o.label, cost:o.cost,
                 cardId:card.id, idx:idx, real: idx < card.options.length});
-    if(!p.bot && idx < card.options.length && window.CityGame && typeof window.CityGame.onChoice==='function'){
+    // 匿名統計：這台裝置的真人自己選的才記；朋友的選擇由朋友自己的裝置記
+    if(!p.bot && !p.remote && !G.autoPlayed && idx < card.options.length && window.CityGame && typeof window.CityGame.onChoice==='function'){
       try{ window.CityGame.onChoice({cardId:card.id, optionIndex: idx, round:G.round}); }catch(e){}
     }
     render();
-    await showResult(card, o, p, idx);
+    await showResult(card, o, p, idx, pi);
     checkLose();
   }
 
-  // 「X% 的玩家和你選一樣」。紀錄不夠、沒設定網址、或是電腦玩家，就什麼都不顯示
-  function shareLine(card, idx, p){
-    if(p.bot || !window.CityStats || idx >= card.options.length) return '';
+  // 「X% 的玩家和你選一樣」。紀錄不夠、沒設定網址、或不是自己選的，就什麼都不顯示
+  function shareLine(cardId, idx){
+    var card = cardById(cardId);
+    if(!window.CityStats || !card || idx >= card.options.length) return '';
     var s = window.CityStats.share(card.id, idx);
     if(!s) return '';
     return '<div class="res" style="margin-top:8px">📊 在所有玩家裡，<b>'+s.pct+'%</b> 的人跟你選一樣（共 '+s.total+' 人選過這張卡）'+
@@ -540,56 +596,204 @@ h2{font-size:18px;margin:0 0 8px}
       '<h2 style="margin-top:8px">'+esc(card.title)+'</h2>';
   }
 
-  function chooseOption(card, opts, p, tile){
+  /* ---------- 提示視窗系統（事件卡、結果、回合結束）----------
+     所有彈出視窗都用一份「提示」資料（G.prompt）描述：單機、房主、朋友的畫面都靠同一份資料畫出一樣的視窗。
+     房主把提示發布到雲端，朋友的手機就會顯示一樣的視窗；輪到誰，誰就能操作，其他人只能看（和給建議）。 */
+  var PROMPT_SEQ = 0;
+
+  // 這台裝置能不能「選」這個提示（事件卡）
+  function canAct(P){
+    if(P.seat == null || P.seat < 0) return !NET.on || isHost();
+    if(NET.on) return P.seat === NET.me;
+    var pl = G.players[P.seat];
+    return !!pl && !pl.bot;
+  }
+  // 這台裝置能不能按「繼續」：單機都可以；房主可以跳過任何人的；朋友只能按自己的
+  function canAck(P){
+    if(!NET.on) return true;
+    if(isHost()) return true;
+    return P.seat === NET.me;
+  }
+
+  // 顯示一個提示，等結果（選了哪個、或按了繼續、或時間到）。auto 是自動繼續的毫秒數，0 代表一定要有人按
+  function askPrompt(P, auto){
+    P.id = ++PROMPT_SEQ; P.rev = 0;
+    G.prompt = P;
     return new Promise(function(resolve){
-      var html = cardHead(card, tile)+'<p class="scene">'+esc(card.scene)+'</p>'+
-        '<div class="hint" style="margin-bottom:8px">💰 目前預算 '+G.budget+'　'+(p.bot ? p.name+' 正在選擇…' : '請 '+p.name+' 選一個處理方式')+'</div>'+
-        (p.bot ? '<div class="hint" id="botNote" style="margin-bottom:8px;color:var(--accent)">&nbsp;</div>' : '')+
-        opts.map(function(o,i){
-          var dis = o.cost > G.budget || p.bot;
-          return '<button class="opt" data-i="'+i+'"'+(dis?' disabled':'')+'><div class="lb">'+String.fromCharCode(65+i)+'. '+esc(o.label)+'</div>'+
-            '<div class="chips">'+costChip(o.cost)+fxChips(o.fx)+'</div>'+
-            (o.cost > G.budget ? '<div class="hint">預算不夠</div>' : '')+'</button>';
-        }).join('');
-      var ov = modal(html);
-      G.lastReason = '';
-      if(p.bot){
-        var choice = botChoose(opts), i = choice.index;
-        G.lastReason = choice.reason || '';
-        // 讓真人看得懂電腦做了什麼：先看完所有選項，再標出電腦的選擇和理由
-        sleep(1500).then(function(){
-          var b = ov.querySelector('[data-i="'+i+'"]');
-          if(b){
-            b.classList.add('pick');
-            b.insertAdjacentHTML('beforeend', '<div class="pickTag">✅ '+esc(p.name)+' 選了這個</div>');
-          }
-          var note = ov.querySelector('#botNote');
-          if(note && choice.reason){ note.textContent = '💭 '+p.name+'：'+choice.reason; }
-          sleep(2200).then(function(){ resolve(i); });
-        });
-      } else {
-        ov.querySelectorAll('.opt').forEach(function(b){
-          b.onclick = function(){ if(!b.disabled) resolve(+b.dataset.i); };
-        });
-      }
+      var done = false;
+      G.promptRes = function(v){
+        if(done) return;
+        done = true; clearTimeout(G.promptTimer); G.promptRes = null;
+        resolve(v);
+      };
+      showPromptModal(); netPublish();
+      if(auto) G.promptTimer = setTimeout(function(){ if(G.promptRes) G.promptRes('auto'); }, auto);
     });
   }
+  function updatePrompt(patch){
+    if(!G.prompt) return;
+    for(var k in patch) G.prompt[k] = patch[k];
+    G.prompt.rev++;
+    showPromptModal(); netPublish();
+  }
+  function endPrompt(){ G.prompt = null; closeModal(); NET.shownKey = ''; netPublish(); }
 
-  async function showResult(card, o, p, idx){
-    var html = '<h2>'+esc(card.title)+'</h2>'+
-      '<div class="res"><b>'+esc(p.name)+'選了：'+esc(o.label)+'</b>'+
-      (p.bot && G.lastReason ? '<div class="hint" style="margin-top:4px;color:var(--accent)">💭 '+esc(G.lastReason)+'</div>' : '')+
-      '<div style="margin-top:6px">'+esc(o.result)+'</div>'+
-      '<div class="chips" style="margin-top:8px">'+costChip(o.cost)+fxChips(o.fx)+'</div></div>'+
-      shareLine(card, idx, p)+
-      '<button class="btn" id="goOn">繼續</button>';
-    var ov = modal(html);
-    await waitClick(ov, '#goOn', botAuto(p, 4000));
-    closeModal();
+  // 朋友對選項的「建議」標籤
+  function suggestTags(P, i){
+    if(!P.suggest) return '';
+    var names = [];
+    Object.keys(P.suggest).forEach(function(seat){
+      if(P.suggest[seat] === i && G.players[seat]) names.push(G.players[seat].name);
+    });
+    return names.length ? '<div class="sug">💡 '+esc(names.join('、'))+' 建議</div>' : '';
   }
 
-  // 電腦玩家的結果視窗：預設要真人按「繼續」才跳走；選了「自動繼續」就等幾秒
-  function botAuto(p, ms){ return p.bot && !G.botWait ? ms : 0; }
+  function ackHtml(P, label){
+    return canAck(P) ? '<button class="btn" id="goOn">'+label+'</button>'
+                     : '<div class="hint">'+(NET.on ? '幾秒後自動繼續…' : '')+'</div>';
+  }
+
+  function promptHtml(P){
+    var actor = P.seat >= 0 ? G.players[P.seat] : null;
+    var me = canAct(P);
+    if(P.kind === 'card'){
+      var card = cardById(P.cardId), tile = tileById(P.tileId);
+      var status = P.picked != null ? '' :
+        (me ? '請 '+actor.name+' 選一個處理方式' : actor.name+' 正在選擇…'+(NET.on ? '（你可以點選項給建議）' : ''));
+      return cardHead(card, tile)+'<p class="scene">'+esc(card.scene)+'</p>'+
+        '<div class="hint" style="margin-bottom:8px">💰 目前預算 '+P.budget+'　'+status+'</div>'+
+        '<div class="hint" style="margin-bottom:8px;color:var(--accent)">'+(P.note ? esc(P.note) : '&nbsp;')+'</div>'+
+        P.opts.map(function(o,i){
+          var afford = o.cost <= P.budget;
+          var dis = !afford || P.picked != null || (!me && !NET.on);
+          return '<button class="opt'+(P.picked===i?' pick':'')+'" data-i="'+i+'"'+(dis?' disabled':'')+'>'+
+            '<div class="lb">'+String.fromCharCode(65+i)+'. '+esc(o.label)+'</div>'+
+            '<div class="chips">'+costChip(o.cost)+fxChips(o.fx)+'</div>'+
+            (afford ? '' : '<div class="hint">預算不夠</div>')+
+            (P.picked===i ? '<div class="pickTag">✅ '+esc(actor.name)+' 選了這個</div>' : '')+
+            suggestTags(P, i)+'</button>';
+        }).join('');
+    }
+    if(P.kind === 'result'){
+      return '<h2>'+esc(P.title)+'</h2>'+
+        '<div class="res"><b>'+esc(P.who)+'選了：'+esc(P.label)+'</b>'+
+        (P.reason ? '<div class="hint" style="margin-top:4px;color:var(--accent)">💭 '+esc(P.reason)+'</div>' : '')+
+        '<div style="margin-top:6px">'+esc(P.text)+'</div>'+
+        '<div class="chips" style="margin-top:8px">'+costChip(P.cost)+fxChips(P.fx)+'</div></div>'+
+        (me && P.real ? shareLine(P.cardId, P.idx) : '')+
+        ackHtml(P, '繼續');
+    }
+    if(P.kind === 'info'){
+      return '<h2>'+esc(P.title)+'</h2><p class="scene">'+esc(P.text)+'</p>'+
+        '<div class="chips" style="margin-bottom:12px">'+(P.gain ? costChip(-P.gain) : '')+fxChips(P.fx || {})+'</div>'+
+        ackHtml(P, '繼續');
+    }
+    var season = P.season;   // 回合結束
+    return '<h2>第 '+P.round+' 回合結束</h2>'+
+      (season ? '<div style="margin-bottom:8px">'+season.icon+' 這回合的時節：<b>'+esc(season.name)+'</b></div>' : '')+
+      '<div class="res">稅收進帳 💰+'+P.inc+'。'+esc(season ? season.text : '城市會老化，人也會抱怨。')+'</div>'+
+      '<div class="chips" style="margin-bottom:12px">'+costChip(-P.inc)+fxChips(P.fx)+'</div>'+
+      ackHtml(P, P.last ? '看結果' : '下一回合');
+  }
+
+  function showPromptModal(){
+    var P = G.prompt;
+    NET.shownKey = P ? P.id+':'+P.rev : '';
+    if(!P){ closeModal(); return; }
+    var ov = modal(promptHtml(P));
+    ov.querySelectorAll('.opt').forEach(function(b){
+      b.onclick = function(){
+        if(b.disabled) return;
+        var i = +b.dataset.i;
+        if(canAct(P)) chooseNow(P, i); else if(NET.on) sendSuggest(i);
+      };
+    });
+    var go = ov.querySelector('#goOn');
+    if(go) go.onclick = function(){ ackNow(P); };
+  }
+
+  function chooseNow(P, i){
+    if(P.picked != null) return;
+    if(isGuest()){
+      var card = cardById(P.cardId);
+      if(i < card.options.length && window.CityGame && typeof window.CityGame.onChoice === 'function'){
+        try{ window.CityGame.onChoice({cardId:P.cardId, optionIndex:i, round:G.round}); }catch(e){}
+      }
+      CityNet.sendAction(NET.code, NET.me, 'choose', {idx:i, pid:P.id});
+      G.prompt.picked = i; G.prompt.rev++; showPromptModal();   // 先在自己的畫面標起來，房主的更新很快會蓋過去
+      return;
+    }
+    if(G.promptRes) G.promptRes(i);
+  }
+  function ackNow(P){
+    if(isGuest()){ CityNet.sendAction(NET.code, NET.me, 'ack', {pid:P.id}); return; }
+    if(G.promptRes) G.promptRes('ack');
+  }
+  function sendSuggest(i){ CityNet.suggest(NET.code, NET.me, i).catch(function(){}); }
+
+  // 等朋友的操作（擲骰子或選選項）；朋友離線，或超過 75 秒沒動作，就由電腦代打（回傳 null）
+  function waitRemote(pi, type, valid){
+    return new Promise(function(resolve){
+      var t0 = Date.now(), timer = null;
+      function finish(v){ clearInterval(timer); NET.remoteWait = null; resolve(v); }
+      NET.remoteWait = {seat:pi, type:type, valid:valid, resolve:finish};
+      timer = setInterval(function(){
+        if(CityNet.seatAway(pi) || Date.now() - t0 > 75000){ G.players[pi].auto = true; finish(null); }
+      }, 1000);
+    });
+  }
+  // 房主收到朋友送來的操作
+  function onRemoteAction(a){
+    if(!G || !G.players[a.seat]) return;
+    G.players[a.seat].auto = false;                // 朋友回來操作了，就不再代打
+    var w = NET.remoteWait;
+    if(a.type === 'roll' && w && w.type === 'roll' && w.seat === a.seat){ w.resolve(a); return; }
+    if(a.type === 'choose' && w && w.type === 'choose' && w.seat === a.seat){ if(!w.valid || w.valid(a)) w.resolve(a); return; }
+    if(a.type === 'ack' && G.prompt && G.prompt.seat === a.seat && a.pid === G.prompt.id && G.promptRes) G.promptRes('ack');
+  }
+
+  function chooseOption(card, opts, p, tile, pi){
+    G.lastReason = ''; G.autoPlayed = false;
+    var P = {kind:'card', seat:pi, cardId:card.id, tileId:tile.id,
+             opts: opts.map(function(o){ return {label:o.label, cost:o.cost, fx:o.fx}; }),
+             budget:G.budget, picked:null, note:'', suggest:{}};
+    if(isHost()) CityNet.clearSuggest(NET.code).catch(function(){});
+    var ask = askPrompt(P, 0);
+    if(p.bot){
+      // 讓真人看得懂電腦做了什麼：先看完所有選項，再標出電腦的選擇和理由
+      var choice = botChoose(opts);
+      G.lastReason = choice.reason || '';
+      sleep(1500).then(function(){
+        updatePrompt({picked: choice.index, note: choice.reason ? '💭 '+p.name+'：'+choice.reason : ''});
+        return sleep(2200);
+      }).then(function(){ if(G.promptRes) G.promptRes(choice.index); });
+    } else if(p.remote){
+      waitRemote(pi, 'choose', function(a){ return opts[a.idx] && opts[a.idx].cost <= G.budget; }).then(function(a){
+        var idx, note = '';
+        if(a){ idx = a.idx; }
+        else {                                       // 朋友離線或太久沒動作：電腦代打
+          var ch = botChoose(opts);
+          idx = ch.index; G.autoPlayed = true;
+          G.lastReason = '電腦代打'+(ch.reason ? '：'+ch.reason : '');
+          note = '💭 '+p.name+' 離線或太久沒動作，電腦代打';
+        }
+        updatePrompt({picked: idx, note: note});
+        sleep(1000).then(function(){ if(G.promptRes) G.promptRes(idx); });
+      });
+    }
+    return ask;
+  }
+
+  async function showResult(card, o, p, idx, pi){
+    var P = {kind:'result', seat:pi, cardId:card.id, idx:idx, real: idx < card.options.length, title:card.title,
+             who:p.name, label:o.label, text:o.result, cost:o.cost, fx:o.fx, reason:G.lastReason || ''};
+    await askPrompt(P, holdMs(p, 4000, 6000));
+    endPrompt();
+  }
+
+  // 結果視窗停多久自動繼續：單機時要真人按「繼續」（電腦的結果可以選自動）；
+  // 連線時一律幾秒後自動繼續，不讓大家乾等（本人或房主可以提早按）
+  function holdMs(p, localMs, netMs){ return NET.on ? netMs : (p.bot && !G.botWait ? localMs : 0); }
 
   /* ---------- 機會卡／一般提示 ---------- */
   async function playChance(p, tile){
@@ -600,15 +804,12 @@ h2{font-size:18px;margin:0 0 8px}
     render();
     var chips = (budget ? costChip(-budget) : '') + fxChips(fx);
     addFeed(piOf(p), '<b>'+esc(p.name)+'</b>・'+esc(tile.name)+'：🎁 '+esc(card.title)+' <span class="chips" style="display:inline-flex">'+chips+'</span>');
-    await info(p, '🎁 '+card.title, card.text, chips);
+    await info(p, '🎁 '+card.title, card.text, budget, fx);
   }
 
-  async function info(p, title, text, chips){
-    var html = '<h2>'+title+'</h2><p class="scene">'+esc(text)+'</p>'+
-      '<div class="chips" style="margin-bottom:12px">'+chips+'</div><button class="btn" id="goOn">繼續</button>';
-    var ov = modal(html);
-    await waitClick(ov, '#goOn', botAuto(p, 2500));
-    closeModal();
+  async function info(p, title, text, gain, fx){
+    await askPrompt({kind:'info', seat:piOf(p), title:title, text:text, gain:gain || 0, fx:fx || {}}, holdMs(p, 2500, 3500));
+    endPrompt();
     checkLose();
   }
 
@@ -656,14 +857,10 @@ h2{font-size:18px;margin:0 0 8px}
     G.phase = 'idle'; G.msg = '第 '+G.round+' 回合結束'; render();
     if(checkLose()) return;
     var last = G.round >= C.rounds;
-    var html = '<h2>第 '+G.round+' 回合結束</h2>'+
-      (season ? '<div style="margin-bottom:8px">'+season.icon+' 這回合的時節：<b>'+esc(season.name)+'</b></div>' : '')+
-      '<div class="res">稅收進帳 💰+'+inc+'。'+esc(season ? season.text : '城市會老化，人也會抱怨。')+'</div>'+
-      '<div class="chips" style="margin-bottom:12px">'+costChip(-inc)+fxChips(fx)+'</div>'+
-      '<button class="btn" id="goOn">'+(last ? '看結果' : '下一回合')+'</button>';
-    var ov = modal(html);
-    await waitClick(ov, '#goOn', 0);
-    closeModal();
+    await askPrompt({kind:'round', seat:-1, round:G.round, inc:inc, fx:fx, last:last,
+                     season: season ? {icon:season.icon, name:season.name, text:season.text} : null},
+                    NET.on ? 6000 : 0);        // 單機：按「下一回合」才繼續；連線：幾秒後自動繼續
+    endPrompt();
     if(last){ evaluate(); return; }
     G.round++;
     nextSeason();                                    // 抽下一回合的時節
@@ -699,10 +896,304 @@ h2{font-size:18px;margin:0 0 8px}
     saveProgress();
     closeModal();
     render();
+    if(isHost()){                                   // 連線：通知朋友遊戲結束，讓大家都看到結算
+      G.prompt = null;
+      netPublish(true);
+      CityNet.setStatus(NET.code, 'over').catch(function(){});
+    }
     // 結算時再抓一次最新的比例，抓到了就重畫結算畫面
     if(window.CityStats && window.CityStats.enabled()){
       window.CityStats.load().then(function(){ if(G && G.over) render(); });
     }
+  }
+
+  /* =================== 連線（房主＝跑遊戲，朋友＝看畫面並送出操作）=================== */
+
+  function netError(e){ NET.err = (e && e.message) ? e.message : String(e); render(); }
+
+  // 房主：把目前的畫面發布到雲端（只送有變的部分，而且稍微合併，避免一秒送上百次）
+  function netPublish(now){
+    if(!isHost() || !G) return;
+    clearTimeout(NET.pubT);
+    NET.pubT = setTimeout(doPublish, now ? 0 : 90);
+  }
+  function doPublish(){
+    if(!isHost() || !G) return;
+    var core = JSON.stringify({
+      players: G.players.map(function(p){ return {name:p.name, bot:!!p.bot, remote:!!p.remote, auto:!!p.auto, pos:p.pos}; }),
+      turn:G.turn, round:G.round, budget:G.budget, ind:G.ind,
+      season: G.season ? {id:G.season.id, name:G.season.name, icon:G.season.icon, text:G.season.text, mult:G.season.mult} : null,
+      dice:G.dice, phase:G.phase, msg:G.msg, delta:G.delta, deltaBudget:G.deltaBudget, jump: Date.now() < G.jumpUntil,
+      over:G.over, result: G.over ? G.result : null, log: G.over ? G.log : null
+    });
+    var feed = JSON.stringify(G.feed), prompt = JSON.stringify(G.prompt || null), parts = {};
+    if(core !== NET.last.core) parts.core = core;
+    if(feed !== NET.last.feed) parts.feed = feed;
+    if(prompt !== NET.last.prompt) parts.prompt = prompt;
+    if(!Object.keys(parts).length) return;
+    NET.last.core = core; NET.last.feed = feed; NET.last.prompt = prompt;
+    CityNet.publish(NET.code, parts).catch(netError);
+  }
+
+  // 房主：存檔，重新整理後可以從這個回合接回來
+  function saveGame(){
+    if(!isHost() || !G) return;
+    var s = {players:G.players, turn:G.turn, round:G.round, budget:G.budget, ind:G.ind, usedEvents:G.usedEvents,
+             usedChances:G.usedChances, log:G.log, seasonDeck:G.seasonDeck, season:G.season, feed:G.feed, mile:G.mile,
+             level:G.level, botWait:G.botWait};
+    CityNet.saveState(NET.code, JSON.stringify(s)).catch(function(){});
+  }
+  function restoreGame(s){
+    s.players.forEach(function(p){ p.auto = false; });
+    G = {players:s.players, turn:s.turn, round:s.round, budget:s.budget, ind:s.ind, usedEvents:s.usedEvents || {},
+         usedChances:s.usedChances || {}, log:s.log || [], dice:0, phase:'idle', msg:'', delta:{}, deltaBudget:0, over:false,
+         result:null, rollResolve:null, level:s.level || 'normal', seasonDeck:s.seasonDeck || [], season:s.season || null,
+         botWait:s.botWait, lastReason:'', feed:s.feed || [], mile:s.mile || {}, jumpUntil:0, newCards:[], newSeasons:[],
+         prompt:null, promptRes:null, promptTimer:null};
+  }
+
+  // 朋友：收到房主發布的畫面，換成這份畫面並重畫（包含彈出視窗）
+  function applyView(v){
+    if(!v || !v.core) return;
+    var core = JSON.parse(v.core);
+    var feed = v.feed ? JSON.parse(v.feed) : [];
+    var prompt = v.prompt ? JSON.parse(v.prompt) : null;
+    var keep = G || {};
+    G = {players:core.players, turn:core.turn, round:core.round, budget:core.budget, ind:core.ind, season:core.season,
+         dice:core.dice, phase:core.phase, msg:core.msg, delta:core.delta || {}, deltaBudget:core.deltaBudget || 0,
+         jumpUntil: core.jump ? Date.now() + 3000 : 0, over:!!core.over, result:core.result, log:core.log || [],
+         feed:feed, prompt:prompt, newCards:keep.newCards || [], newSeasons:keep.newSeasons || [], prevBest:NET.prevBest,
+         rollResolve:null, promptRes:null};
+    if(core.season) markSeen('seasonsSeen', core.season.id);          // 朋友的圖鑑也會跟著解鎖
+    if(prompt && prompt.kind === 'card') markSeen('seen', prompt.cardId);
+    if(G.over && !NET.counted){
+      NET.counted = true;
+      PROG.plays++; if(G.result.win) PROG.wins++;
+      if(G.result.stars > PROG.bestStars) PROG.bestStars = G.result.stars;
+      saveProgress();
+    }
+    render();
+    if(G.over){ closeModal(); NET.shownKey = ''; }
+    else if((prompt ? prompt.id+':'+prompt.rev : '') !== NET.shownKey){ showPromptModal(); }
+  }
+
+  // 房主：朋友對選項的建議變了，更新到事件卡上
+  function onSuggestUpdate(map){
+    if(!G || !G.prompt || G.prompt.kind !== 'card' || G.prompt.picked != null) return;
+    if(JSON.stringify(map) === JSON.stringify(G.prompt.suggest || {})) return;
+    updatePrompt({suggest: map});
+  }
+
+  function onRoomUpdate(info){
+    NET.meta = info.meta; NET.seats = info.seats;
+    if(NET.on && (!G || (isGuest() && info.meta.status === 'lobby'))) render();
+  }
+
+  function roomUrl(code){
+    var q = new URLSearchParams(location.search); q.set('room', code);
+    return location.pathname + '?' + q.toString();
+  }
+  // 要傳給朋友的連結：保留 mode=test，但拿掉測試用的 tab 參數
+  function inviteLink(code){
+    var q = new URLSearchParams(location.search); q.delete('tab'); q.set('room', code);
+    return location.origin + location.pathname + '?' + q.toString();
+  }
+  function baseUrl(){
+    var q = new URLSearchParams(location.search); q.delete('room');
+    var s = q.toString();
+    return location.pathname + (s ? '?' + s : '');
+  }
+  function nickOf(def){ var n = (SETUP.nick || '').trim().slice(0, 8); return n || def; }
+
+  function enterRoom(code, role, seat){
+    NET.on = true; NET.role = role; NET.code = code; NET.me = seat; NET.claimed = role === 'host' || seat >= 0; NET.err = '';
+    NET.prevBest = PROG.bestStars;
+    CityNet.saveSession({code:code, role:role, seat:seat});
+    CityNet.watchRoom(code, onRoomUpdate);
+    if(role === 'host'){
+      CityNet.watchActions(code, onRemoteAction);
+      CityNet.watchSuggest(code, onSuggestUpdate);
+    } else {
+      CityNet.watchView(code, applyView);
+      CityNet.startHeartbeat(code, seat);
+    }
+    try{ history.replaceState(null, '', roomUrl(code)); }catch(e){}
+    render();
+  }
+
+  // 房主開房間：上面選「真人」的位子留給朋友，選「電腦」的由電腦補上
+  async function openRoom(){
+    if(NET.busy) return;
+    NET.busy = true; NET.err = ''; renderSetup();
+    try{
+      SETUP.seats[0] = 'human';
+      var seats = [], botNo = 0;
+      for(var i = 0; i < SETUP.n; i++){
+        if(i === 0) seats.push({type:'host', name:nickOf('')});
+        else if(SETUP.seats[i] === 'bot') seats.push({type:'bot', name:'電腦'+String.fromCharCode(65 + botNo++)});
+        else seats.push({type:'open', name:''});
+      }
+      var code = await CityNet.createRoom({n:SETUP.n, level:SETUP.level, mode: window.CityStats ? window.CityStats.mode : 'test', seats:seats});
+      NET.busy = false;
+      enterRoom(code, 'host', 0);
+    }catch(e){
+      NET.busy = false; NET.err = e.message || String(e); renderSetup();
+    }
+  }
+
+  // 房主按「開始遊戲」：沒人坐的位子改成電腦，然後開始
+  async function startNetGame(){
+    var meta = NET.meta, seats = NET.seats || {}, players = [], botNo = 0, ops = [];
+    for(var i = 0; i < meta.n; i++){
+      var s = seats[i] || {type:'open'};
+      if(s.type === 'host') players.push({name:s.name || '玩家1', bot:false, remote:false, pos:0});
+      else if(s.type === 'human') players.push({name:s.name || '玩家'+(i+1), bot:false, remote:true, pos:0});
+      else {
+        var nm = s.type === 'bot' && s.name ? s.name : '電腦'+String.fromCharCode(65 + botNo);
+        botNo++;
+        players.push({name:nm, bot:true, remote:false, pos:0});
+        if(s.type === 'open') ops.push(CityNet.setSeat(NET.code, i, {type:'bot', name:nm}));
+      }
+    }
+    try{ await Promise.all(ops); }catch(e){ return netError(e); }
+    SETUP.level = meta.level || SETUP.level;
+    SETUP.botWait = false;
+    newGame(players);
+    try{ await CityNet.setStatus(NET.code, 'playing'); }catch(e){ return netError(e); }
+    netPublish(true);
+    gameLoop(0);
+  }
+
+  // 朋友挑一個空位坐下
+  async function joinSeat(){
+    var input = document.getElementById('nick');
+    var name = input ? input.value.trim().slice(0, 8) : '';
+    if(NET.busy) return;
+    NET.busy = true; NET.err = ''; render();
+    try{
+      var i = await CityNet.claimSeat(NET.code, name);
+      NET.busy = false;
+      enterRoomAfterClaim(i);
+    }catch(e){
+      NET.busy = false; NET.err = e.message || String(e); render();
+    }
+  }
+  function enterRoomAfterClaim(seat){
+    NET.me = seat; NET.claimed = true; NET.role = 'guest'; NET.err = '';
+    NET.prevBest = PROG.bestStars;
+    CityNet.saveSession({code:NET.code, role:'guest', seat:seat});
+    CityNet.watchView(NET.code, applyView);
+    CityNet.startHeartbeat(NET.code, seat);
+    render();
+  }
+
+  // 網址有 ?room=代碼：連線進房間。是房主就接回遊戲；之前坐過的位子就接回；否則顯示加入畫面
+  async function boot(){
+    var code = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
+    if(!code || !window.CityNet || !CityNet.available()){ render(); return; }
+    NET.on = true; NET.code = code; NET.role = 'guest'; NET.me = -1; NET.claimed = false; render();
+    try{
+      await CityNet.init();
+      var info = await CityNet.peek(code);
+      if(!info){ NET.on = false; NET.err = '找不到房間 '+code+'，請跟朋友確認代碼'; history.replaceState(null, '', baseUrl()); render(); return; }
+      NET.meta = info.meta; NET.seats = info.seats; NET.prevBest = PROG.bestStars;
+      var uid = CityNet.uid();
+      if(info.meta.hostUid === uid){ await resumeHost(code, info); return; }
+      for(var i = 0; i < info.meta.n; i++){
+        var s = info.seats[i];
+        if(s && s.type === 'human' && s.uid === uid){ enterRoom(code, 'guest', i); return; }
+      }
+      CityNet.watchRoom(code, onRoomUpdate);     // 還沒坐下：先看大廳
+      render();
+    }catch(e){
+      NET.on = false; NET.err = e.message || String(e); render();
+    }
+  }
+  async function resumeHost(code, info){
+    NET.role = 'host'; NET.me = 0; NET.claimed = true;
+    CityNet.saveSession({code:code, role:'host', seat:0});
+    CityNet.watchRoom(code, onRoomUpdate);
+    CityNet.watchActions(code, onRemoteAction);
+    CityNet.watchSuggest(code, onSuggestUpdate);
+    if(info.meta.status === 'playing'){
+      var saved = await CityNet.loadState(code);
+      if(saved){
+        restoreGame(JSON.parse(saved));
+        gameLoop(G.turn);                          // 從存檔的那一回合接著玩
+        return;
+      }
+    }
+    render();
+  }
+
+  function copyText(text, btn){
+    function done(){ if(btn){ var old = btn.textContent; btn.textContent = '已複製 ✓'; setTimeout(function(){ btn.textContent = old; }, 1500); } }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, function(){ window.prompt('請複製這個連結：', text); }); }
+    else { window.prompt('請複製這個連結：', text); }
+  }
+
+  /* ---------- 畫面：連線大廳 ---------- */
+  function renderLobby(){
+    if(!NET.meta){
+      app.innerHTML = '<h1>🏙️ 市民大富翁</h1><div class="panel"><p style="margin:0">'+
+        (NET.err ? '<span class="err">'+esc(NET.err)+'</span>' : '連線中…')+'</p></div>';
+      return;
+    }
+    var meta = NET.meta, seats = NET.seats || {}, code = NET.code, rows = '';
+    for(var i = 0; i < meta.n; i++){
+      var s = seats[i] || {type:'open'}, label = '', extra = '';
+      if(s.type === 'host') label = '房主'+(s.name ? '：'+esc(s.name) : '')+(isHost() ? '（你）' : '');
+      else if(s.type === 'human') label = '朋友：'+esc(s.name || '玩家'+(i+1))+(i === NET.me ? '（你）' : '')+(CityNet.seatAway(i) ? '<span class="badge">離線</span>' : '');
+      else if(s.type === 'bot') label = '電腦補位';
+      else {
+        label = '⏳ 等朋友加入…';
+        if(isHost()) extra = '<button class="btn ghost" data-bot="'+i+'">改成電腦</button>';
+      }
+      rows += '<div class="seatrow">'+tokenHtml(i)+'<div class="nm2">'+label+'</div>'+extra+'</div>';
+    }
+    var openLeft = Object.keys(seats).some(function(k){ return seats[k] && seats[k].type === 'open'; });
+    var body = '';
+    if(isHost()){
+      var link = inviteLink(code);
+      body = '<div class="panel hl"><h2>把這個連結傳給朋友</h2>'+
+        '<div class="roomcode">'+esc(code)+'</div>'+
+        '<div class="hint" style="text-align:center;margin-bottom:8px">（朋友也可以在首頁輸入這組房間代碼）</div>'+
+        '<div class="row"><input type="text" readonly value="'+esc(link)+'" id="linkBox">'+
+        '<button class="btn" id="copyBtn">複製連結</button></div>'+
+        (navigator.share ? '<div style="margin-top:8px"><button class="btn ghost" id="shareBtn">用 LINE 或其他 App 分享</button></div>' : '')+
+        '</div>'+
+        '<div class="panel"><h2>座位</h2>'+rows+
+        (openLeft ? '<p class="hint" style="margin:8px 0 0">開始時還沒人坐的位子，會由電腦補上。</p>' : '')+'</div>'+
+        '<button class="btn" id="startNet">開始遊戲</button>';
+    } else if(!NET.claimed){
+      body = '<div class="panel hl"><h2>你被邀請加入一局市民大富翁</h2>'+
+        '<p style="margin:0 0 8px">房間代碼：<b>'+esc(code)+'</b></p>'+
+        (meta.status !== 'lobby' ? '<p class="err">這個房間已經開始遊戲了，下次早點加入吧！</p>' :
+         '<div class="row"><input type="text" id="nick" maxlength="8" placeholder="你的暱稱（可留空）">'+
+         '<button class="btn" id="joinSeat"'+(NET.busy ? ' disabled' : '')+'>加入</button></div>')+
+        '</div><div class="panel"><h2>座位</h2>'+rows+'</div>';
+    } else {
+      body = '<div class="panel hl"><h2>你已經加入了 🎉</h2><p style="margin:0">等房主按下「開始遊戲」，畫面就會自動出現。</p></div>'+
+        '<div class="panel"><h2>座位</h2>'+rows+'</div>';
+    }
+    app.innerHTML = '<h1>🏙️ 市民大富翁</h1><p class="sub">找朋友一起玩：大家同一隊，各用自己的手機。</p>'+body+
+      (NET.err ? '<div class="err">'+esc(NET.err)+'</div>' : '')+
+      '<div style="margin-top:12px"><button class="btn ghost" id="leaveBtn">離開房間</button></div>'+
+      '<p class="foot">連線時，暱稱和座位會暫存在雲端，只用來讓大家看到彼此；不需要註冊，也不會記錄你的真實身分。</p>';
+
+    var q = function(id){ return document.getElementById(id); };
+    if(q('copyBtn')) q('copyBtn').onclick = function(){ copyText(inviteLink(code), q('copyBtn')); };
+    if(q('shareBtn')) q('shareBtn').onclick = function(){ navigator.share({title:'市民大富翁', text:'一起來玩市民大富翁！', url:inviteLink(code)}).catch(function(){}); };
+    if(q('startNet')) q('startNet').onclick = startNetGame;
+    if(q('joinSeat')) q('joinSeat').onclick = joinSeat;
+    if(q('leaveBtn')) q('leaveBtn').onclick = leaveRoom;
+    app.querySelectorAll('[data-bot]').forEach(function(b){
+      b.onclick = function(){ CityNet.setSeat(NET.code, +b.dataset.bot, {type:'bot', name:'電腦'+String.fromCharCode(65 + (+b.dataset.bot))}).catch(netError); };
+    });
+  }
+  function leaveRoom(){
+    try{ CityNet.leave(); CityNet.clearSession(); }catch(e){}
+    location.href = baseUrl();
   }
 
   /* ---------- 彈出視窗工具 ---------- */
@@ -738,7 +1229,10 @@ h2{font-size:18px;margin:0 0 8px}
   function renderGame(){
     var p = cur();
     var playersHtml = G.players.map(function(pl,i){
-      return '<span class="pl'+(i===G.turn && !G.over ? ' now':'')+'">'+tokenHtml(i)+esc(pl.name)+'</span>';
+      var badge = pl.bot ? '<span class="badge">電腦</span>' :
+                  pl.auto ? '<span class="badge">電腦代打中</span>' :
+                  (NET.on && i === NET.me) ? '<span class="badge">你</span>' : '';
+      return '<span class="pl'+(i===G.turn && !G.over ? ' now':'')+'">'+tokenHtml(i)+esc(pl.name)+badge+'</span>';
     }).join('');
 
     var indHtml = IND.map(function(i){
@@ -773,7 +1267,7 @@ h2{font-size:18px;margin:0 0 8px}
       }).join('')+'</ul></div>' : '';
 
     var action;
-    if(G.phase==='roll' && !p.bot){
+    if(G.phase==='roll' && isMine(p)){
       action = '<button class="btn" id="rollBtn">🎲 擲骰子</button>';
     } else {
       action = '<div class="hint">'+esc(G.msg)+'</div>';
@@ -792,7 +1286,10 @@ h2{font-size:18px;margin:0 0 8px}
       '<p class="foot">小海豚走到🚩就是過關線（'+C.winSatisfaction+'）；其他三項的黑色小線是 '+C.minOtherIndicator+'，要超過它。</p>';
 
     var rb = document.getElementById('rollBtn');
-    if(rb) rb.onclick = function(){ if(G.rollResolve){ var r = G.rollResolve; G.rollResolve = null; r(); } };
+    if(rb) rb.onclick = function(){
+      if(isGuest()){ CityNet.sendAction(NET.code, NET.me, 'roll'); rb.disabled = true; return; }   // 朋友：請房主幫忙擲
+      if(G.rollResolve){ var r = G.rollResolve; G.rollResolve = null; r(); }
+    };
   }
 
   /* ---------- 畫面：結算 ---------- */
@@ -819,7 +1316,10 @@ h2{font-size:18px;margin:0 0 8px}
       '。（只存在這個瀏覽器裡，不會上傳）</p></div>';
     var statsHtml = '';
     if(window.CityStats){
-      var mine = G.log.filter(function(l){ return !l.bot && l.real && window.CityStats.share(l.cardId, l.idx); });
+      // 只看「自己」選的：單機是所有真人，連線是自己的座位
+      var mine = G.log.filter(function(l){
+        return (NET.on ? l.seat === NET.me : !l.bot) && l.real && window.CityStats.share(l.cardId, l.idx);
+      });
       if(mine.length){
         statsHtml = '<div class="panel"><h2>你和大家的想法</h2><ul class="log">'+mine.map(function(l){
           var s = window.CityStats.share(l.cardId, l.idx);
@@ -843,16 +1343,19 @@ h2{font-size:18px;margin:0 0 8px}
       '<div class="panel"><h2>這局做過的決定</h2>'+logHtml+'</div>'+
       '<button class="btn" id="againBtn">再玩一局</button>'+
       '<p class="foot">這是公民教育遊戲，事件內容為情境模擬，不代表任何政黨或個人的立場。</p>';
-    document.getElementById('againBtn').onclick = function(){ location.reload(); };
+    document.getElementById('againBtn').onclick = function(){
+      if(NET.on){ leaveRoom(); } else { location.reload(); }   // 連線的局結束後，回到首頁重新開（或重新開房間）
+    };
   }
 
   function render(){
+    if(NET.on && !G) return renderLobby();
     if(!G) return renderSetup();
     if(G.over) return renderResult();
     renderGame();
   }
 
-  render();
+  boot();
 })();
 </script>
 </body>
