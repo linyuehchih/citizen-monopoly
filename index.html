@@ -133,8 +133,8 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
 <div id="app" class="wrap"></div>
 <script src="data/game-data.js?v=e03ba9bc"></script>
 <script src="bot.js?v=8139f834"></script>
-<script src="stats-config.js?v=359a6d75"></script>
-<script src="stats.js?v=f78d2499"></script>
+<script src="stats-config.js?v=1e017f1c"></script>
+<script src="stats.js?v=f50c4c97"></script>
 <script src="firebase-config.js?v=ed356509"></script>
 <script src="net.js?v=0f377765"></script>
 <script>
@@ -321,7 +321,9 @@ input[type=text]{font:inherit;color:var(--text);background:var(--panel);border:1
     var introHtml = (window.CityStats && window.CityStats.enabled()) ?
       '<div class="panel hl"><h2>🗳️ 你的選擇，會讓大家看見</h2>'+
       '<p style="margin:0 0 6px">每次處理市政問題，你選的解決方式都會被匿名記下來。玩的人越多，我們就越能看出：面對同一個問題，大家比較傾向用什麼方式解決。</p>'+
-      '<p class="hint" style="margin:0">這是玩家選擇統計，不是民意調查。</p></div>' : '';
+      '<p class="hint" style="margin:0 0 8px">這是玩家選擇統計，不是民意調查。</p>'+
+      (window.CityStats.blackout() ? '' : '<a class="btn ghost" href="choices.html" style="display:inline-block;text-decoration:none">📊 看大家的選擇</a>')+
+      '</div>' : '';
     var levelHtml = hasBot ?
       '<div class="panel"><h2>電腦玩家風格</h2><div class="seg row" id="lvSeg">'+
         '<button data-lv="easy" class="'+(SETUP.level==='easy'?'on':'')+'">🟢 輕鬆</button>'+

@@ -39,26 +39,34 @@
     }catch(e){}
   }
 
+  // 選舉期間暫停顯示統計（設定在 stats-config.js）：這段時間不抓、也不顯示任何百分比
+  function blackout(){
+    var b = window.CITY_STATS_BLACKOUT;
+    if(!b) return false;
+    var now = Date.now();
+    return now >= new Date(b.from).getTime() && now < new Date(b.to).getTime();
+  }
+
   function load(){
-    if(!url()) return Promise.resolve(null);
+    if(!url() || blackout()){ data = null; return Promise.resolve(null); }
     var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = ctl ? setTimeout(function(){ ctl.abort(); }, 5000) : null;
     return fetch(url() + '?action=stats&mode=' + mode, ctl ? {signal: ctl.signal} : {})
       .then(function(r){ return r.json(); })
-      .then(function(j){ if(timer) clearTimeout(timer); if(j && j.ok){ data = j; } return data; })
+      .then(function(j){ if(timer) clearTimeout(timer); if(j && j.ok){ data = j.blackout ? null : j; } return data; })
       .catch(function(){ if(timer) clearTimeout(timer); return data; });
   }
 
   // 有多少 % 的玩家選了這個選項；紀錄不夠就回 null
   function share(cardId, optionIndex){
-    if(!data || !data.cards || !data.cards[cardId]) return null;
+    if(blackout() || !data || !data.cards || !data.cards[cardId]) return null;
     var c = data.cards[cardId], total = c[0] + c[1] + c[2];
     if(total < MIN_SAMPLES || !(optionIndex >= 0 && optionIndex <= 2)) return null;
     return {pct: Math.round(100 * c[optionIndex] / total), total: total};
   }
 
   window.CityStats = {
-    enabled: enabled, load: load, record: record, share: share,
+    enabled: enabled, load: load, record: record, share: share, blackout: blackout,
     mode: mode, MIN_SAMPLES: MIN_SAMPLES
   };
 })();

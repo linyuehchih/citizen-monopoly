@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="description" content="市民大富翁：玩家在遊戲裡面對市政事件時，大家選了哪個處理方式。這是玩家選擇統計，不是民意調查。">
+<title>大家的選擇</title>
+<style>
+:root{
+  --bg:#f6f4ee; --panel:#ffffff; --text:#1f2933; --muted:#6b7280; --line:#e3dfd3;
+  --accent:#c2410c; --good:#15803d; --bar:#4aa3df; --top:#d98e04;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#16181d; --panel:#1f232b; --text:#e8e6df; --muted:#9aa3af; --line:#343a46; --accent:#f59e63; --good:#4ade80; --bar:#4a8fc7; --top:#f2b84b; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;line-height:1.55}
+a{color:var(--accent)}
+.wrap{max-width:640px;margin:0 auto;padding:12px 16px 48px}
+h1{font-size:26px;margin:16px 0 4px}
+h2{font-size:17px;margin:0 0 6px}
+.sub{color:var(--muted);margin:0 0 14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.panel.warn{border-left:4px solid var(--accent)}
+.hint{color:var(--muted);font-size:13px}
+.btn{display:inline-block;background:var(--accent);color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;font-size:15px;text-decoration:none;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.seg button{border:1px solid var(--line);background:var(--panel);padding:7px 12px;border-radius:8px;font:inherit;color:inherit;cursor:pointer}
+.seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tag{display:inline-block;font-size:12px;border-radius:999px;padding:1px 10px;background:var(--line);color:var(--muted);margin-right:6px}
+.tag.hl{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--accent)}
+.card h2{margin-top:6px}
+.scene{margin:4px 0 10px;color:var(--muted);font-size:14px}
+.opt{margin:8px 0}
+.opt .top{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.opt .nm{font-weight:600}
+.opt .pct{font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar{height:10px;border-radius:6px;background:var(--line);margin-top:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--bar);border-radius:6px}
+.opt.top1 .bar i{background:var(--top)}
+.opt.top1 .nm::after{content:" ★最多人選";color:var(--top);font-size:12px;font-weight:700}
+.n{color:var(--muted);font-size:12px;margin-top:6px}
+.sumrow{display:flex;gap:10px;flex-wrap:wrap}
+.sumrow div{flex:1;min-width:120px;text-align:center;border:1px solid var(--line);border-radius:10px;padding:8px}
+.sumrow b{display:block;font-size:22px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <h1>📊 大家的選擇</h1>
+  <p class="sub">玩家在「市民大富翁」裡面對市政事件時，大家選了哪個處理方式。</p>
+  <div class="panel"><p style="margin:0">載入中…</p></div>
+</div>
+
+<script src="data/game-data.js?v=e03ba9bc"></script>
+<script src="stats-config.js?v=1e017f1c"></script>
+<script>
+(function(){
+  var app = document.getElementById('app');
+  var MIN = 20;                                   // 一張卡至少有這麼多人次才顯示比例
+  var D = window.GAME_DATA, URLS = window.CITY_STATS_URL || '';
+  var mode = /[?&]mode=test(&|$)/.test(location.search) ? 'test' : 'prod';   // 公開頁預設只看正式統計
+  var filter = 'all';
+  var DATA = null;
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function blackout(){
+    var b = window.CITY_STATS_BLACKOUT;
+    if(!b) return false;
+    var now = Date.now();
+    return now >= new Date(b.from).getTime() && now < new Date(b.to).getTime();
+  }
+
+  var DISCLAIMER =
+    '<div class="panel warn"><h2>請先看這一段</h2>'+
+    '<p style="margin:0 0 6px"><b>這是「玩家選擇統計」，不是民意調查。</b></p>'+
+    '<ul style="margin:0;padding-left:20px;font-size:14px">'+
+      '<li>玩遊戲的人不是隨機抽樣，無法代表花蓮市民整體的想法。</li>'+
+      '<li>沒有調查單位、抽樣方式、母體數與誤差值，也不是針對任何選舉、候選人或政黨做的調查。</li>'+
+      '<li>每個玩家（以瀏覽器為單位）對同一張事件卡只算第一次，但仍可能有人重複玩或亂選。</li>'+
+      '<li>它只能告訴你：「在這款遊戲裡，玩的人面對這個情境時，傾向選什麼」，請不要把它當成政策依據或引述成民調。</li>'+
+    '</ul></div>';
+
+  function shell(inner){
+    app.innerHTML = '<h1>📊 大家的選擇</h1><p class="sub">玩家在「市民大富翁」裡面對市政事件時，大家選了哪個處理方式。</p>'+
+      DISCLAIMER + inner +
+      '<div style="margin-top:16px"><a class="btn ghost" href="./">← 回到遊戲</a></div>'+
+      '<p class="hint" style="margin-top:14px">這是公民教育遊戲，事件內容為情境模擬，不代表任何政黨或個人的立場。</p>';
+  }
+
+  function render(){
+    var cards = [], totalPicks = 0;
+    D.events.forEach(function(e){
+      var c = DATA.cards[e.id];
+      if(!c) return;
+      var total = c[0] + c[1] + c[2];
+      totalPicks += total;
+      if(total >= MIN) cards.push({e:e, c:c, total:total});
+    });
+    var all = cards.length;
+    if(filter === 'hualien') cards = cards.filter(function(x){ return x.e.kind === 'hualien'; });
+    cards.sort(function(a,b){ return b.total - a.total; });
+
+    var summary = '<div class="panel"><div class="sumrow">'+
+      '<div><b>'+totalPicks+'</b><span class="hint">累計選擇次數</span></div>'+
+      '<div><b>'+all+'</b><span class="hint">已有比例的事件卡<br>（每張至少 '+MIN+' 次）</span></div></div>'+
+      '<div class="seg" style="margin-top:10px"><button data-f="all" class="'+(filter==='all'?'on':'')+'">全部</button> '+
+      '<button data-f="hualien" class="'+(filter==='hualien'?'on':'')+'">只看花蓮在地</button></div></div>';
+
+    var list;
+    if(!cards.length){
+      list = '<div class="panel"><p style="margin:0">'+
+        (all ? '這個分類目前還沒有累積到足夠的選擇次數。' : '目前還沒有任何一張事件卡累積到 '+MIN+' 次選擇，所以還沒有比例可以顯示。玩的人越多，這裡就會越來越豐富。')+
+        '</p></div>';
+    } else {
+      list = cards.map(function(x){
+        var max = Math.max.apply(null, x.c);
+        var opts = x.e.options.map(function(o, i){
+          var pct = Math.round(100 * x.c[i] / x.total);
+          return '<div class="opt'+(x.c[i] === max ? ' top1' : '')+'"><div class="top"><span class="nm">'+esc(o.label)+'</span>'+
+            '<span class="pct">'+pct+'%（'+x.c[i]+'）</span></div><div class="bar"><i style="width:'+pct+'%"></i></div></div>';
+        }).join('');
+        return '<div class="panel card"><span class="tag '+(x.e.kind === 'hualien' ? 'hl' : '')+'">'+(x.e.kind === 'hualien' ? '花蓮在地' : '市政情境')+'</span>'+
+          '<h2>'+esc(x.e.title)+'</h2><div class="scene">'+esc(x.e.scene)+'</div>'+opts+
+          '<div class="n">共 '+x.total+' 人次選擇</div></div>';
+      }).join('');
+    }
+    shell(summary + list);
+    app.querySelectorAll('[data-f]').forEach(function(b){ b.onclick = function(){ filter = b.dataset.f; render(); }; });
+  }
+
+  if(!D){ shell('<div class="panel"><p style="margin:0">找不到遊戲資料。</p></div>'); return; }
+  if(blackout()){
+    shell('<div class="panel"><h2>選舉期間，暫停顯示</h2><p style="margin:0">依選舉罷免法的規定，投票日前十日起至投票結束，不發布這類統計。投票結束後會自動恢復，謝謝體諒。</p></div>');
+    return;
+  }
+  if(!URLS){ shell('<div class="panel"><p style="margin:0">統計功能尚未開放。</p></div>'); return; }
+
+  var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = ctl ? setTimeout(function(){ ctl.abort(); }, 8000) : null;
+  fetch(URLS + '?action=stats&mode=' + mode, ctl ? {signal: ctl.signal} : {})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if(timer) clearTimeout(timer);
+      if(!j || !j.ok){ throw new Error('bad'); }
+      if(j.blackout){ shell('<div class="panel"><h2>選舉期間，暫停顯示</h2><p style="margin:0">依選舉罷免法的規定，投票日前十日起至投票結束，不發布這類統計。投票結束後會自動恢復，謝謝體諒。</p></div>'); return; }
+      DATA = j; render();
+    })
+    .catch(function(){ shell('<div class="panel"><p style="margin:0">目前連不上統計資料，請稍後再試。</p></div>'); });
+})();
+</script>
+</body>
+</html>
