@@ -54,7 +54,7 @@ h2{font-size:17px;margin:0 0 6px}
 </div>
 
 <script src="data/game-data.js?v=e03ba9bc"></script>
-<script src="stats-config.js?v=1e017f1c"></script>
+<script src="stats-config.js?v=6ddb56d7"></script>
 <script>
 (function(){
   var app = document.getElementById('app');
@@ -68,7 +68,7 @@ h2{font-size:17px;margin:0 0 6px}
 
   function blackout(){
     var b = window.CITY_STATS_BLACKOUT;
-    if(!b) return false;
+    if(!b || b.enabled === false) return false;
     var now = Date.now();
     return now >= new Date(b.from).getTime() && now < new Date(b.to).getTime();
   }

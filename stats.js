@@ -42,7 +42,7 @@
   // 選舉期間暫停顯示統計（設定在 stats-config.js）：這段時間不抓、也不顯示任何百分比
   function blackout(){
     var b = window.CITY_STATS_BLACKOUT;
-    if(!b) return false;
+    if(!b || b.enabled === false) return false;
     var now = Date.now();
     return now >= new Date(b.from).getTime() && now < new Date(b.to).getTime();
   }
